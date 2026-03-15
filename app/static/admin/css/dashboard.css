@@ -753,7 +753,8 @@ body.admin-dashboard.is-visitor-page-modal-open {
 }
 
 .login-cell.submission-meta .approve-submission-btn,
-.login-cell.submission-meta .reject-submission-btn {
+.login-cell.submission-meta .reject-submission-btn,
+.login-cell.submission-meta .copy-submission-btn {
   margin: 0;
 }
 

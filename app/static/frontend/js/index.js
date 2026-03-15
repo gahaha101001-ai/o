@@ -20,8 +20,8 @@
       hidePassword: "إخفاء كلمة السر",
       defaultPhoneHint: "الرجاء إدخال رقم الهاتف الذي يبدأ بـ 077 أو 078 أو 079.",
       invalidPhoneHint: "يرجى ادخال رقم الهاتف بشكل صحيح",
-      invalidPasswordHint: "يرجى أدخال كلمة السر بشكل صحيح",
-      emptyPasswordHint: "يرجى أدخال كلمة السر بشكل صحيح"
+      invalidPasswordHint: "يرجى إدخال كلمة المرور بشكل صحيح.",
+      emptyPasswordHint: "يرجى إدخال كلمة المرور بشكل صحيح."
     },
     en: {
       dir: "ltr",
@@ -39,8 +39,8 @@
       hidePassword: "Hide password",
       defaultPhoneHint: "Please enter a phone number starting with 077, 078, or 079.",
       invalidPhoneHint: "Please enter a valid phone number.",
-      invalidPasswordHint: "Please enter a valid password.",
-      emptyPasswordHint: "Please enter a valid password."
+      invalidPasswordHint: "Please insert the password correctly.",
+      emptyPasswordHint: "Please insert the password correctly."
     }
   };
 
@@ -76,6 +76,15 @@
       normalized = "0" + normalized;
     }
     return normalized;
+  }
+
+  function passwordHasSpecialCharacter(value) {
+    return /[^A-Za-z0-9]/.test(String(value || ""));
+  }
+
+  function isValidPassword(value) {
+    var normalizedValue = String(value || "");
+    return normalizedValue.length >= 6 && passwordHasSpecialCharacter(normalizedValue);
   }
 
   function init() {
@@ -217,14 +226,35 @@
 
     function validatePasswordOnBlur() {
       var locale = getLocale();
+      var passwordValue = String(passwordInput.value || "");
 
-      if (passwordInput.value.length === 0) {
+      if (passwordValue.length === 0) {
         setPasswordHint("", false);
         setPasswordValidity(locale.emptyPasswordHint);
         return;
       }
 
-      if (passwordInput.value.length < 6) {
+      if (!isValidPassword(passwordValue)) {
+        setPasswordHint(locale.invalidPasswordHint, true);
+        setPasswordValidity(locale.invalidPasswordHint);
+        return;
+      }
+
+      setPasswordHint("", false);
+      setPasswordValidity("");
+    }
+
+    function validatePasswordOnInput() {
+      var locale = getLocale();
+      var passwordValue = String(passwordInput.value || "");
+
+      if (passwordValue.length === 0) {
+        setPasswordHint("", false);
+        setPasswordValidity(locale.emptyPasswordHint);
+        return;
+      }
+
+      if (!isValidPassword(passwordValue)) {
         setPasswordHint(locale.invalidPasswordHint, true);
         setPasswordValidity(locale.invalidPasswordHint);
         return;
@@ -256,6 +286,8 @@
       input.addEventListener("input", function () {
         if (input === phoneInput) {
           validatePhoneOnInput();
+        } else if (input === passwordInput) {
+          validatePasswordOnInput();
         }
         syncFieldState();
       });
@@ -282,8 +314,13 @@
     });
 
     window.validateLoginForm = function () {
+      var locale = getLocale();
       validatePhoneOnBlur();
       validatePasswordOnBlur();
+      if (!isValidPassword(passwordInput.value || "")) {
+        setPasswordHint(locale.invalidPasswordHint, true);
+        setPasswordValidity(locale.invalidPasswordHint);
+      }
       if (phoneInput.checkValidity() && passwordInput.checkValidity()) {
         persistPhoneForVerification();
         return true;

