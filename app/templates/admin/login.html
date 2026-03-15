@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Login</title>
+  <link rel="stylesheet" href="/static/vendor/tabler/tabler.min.css" />
+</head>
+<body class="d-flex flex-column">
+  <div class="page page-center">
+    <div class="container container-tight py-4">
+      <div class="card card-md">
+        <div class="card-body">
+          <h2 class="h2 text-center mb-4">Admin Login</h2>
+          {% if error %}
+          <div class="alert alert-danger" role="alert">{{ error }}</div>
+          {% endif %}
+          <form method="post" action="/admin/login" autocomplete="off">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <div class="mb-3">
+              <label class="form-label">Username</label>
+              <input class="form-control" type="text" name="username" required />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Password</label>
+              <input class="form-control" type="password" name="password" required />
+            </div>
+            <div class="form-footer">
+              <button class="btn btn-primary w-100" type="submit">Sign in</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/static/vendor/tabler/tabler.min.js"></script>
+</body>
+</html>

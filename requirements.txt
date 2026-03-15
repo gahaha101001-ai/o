@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+jinja2
+pydantic-settings
+python-multipart
+itsdangerous
+redis
+pymongo
