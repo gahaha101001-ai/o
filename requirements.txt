@@ -6,3 +6,4 @@ python-multipart
 itsdangerous
 redis
 pymongo
+requests
