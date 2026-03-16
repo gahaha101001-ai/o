@@ -39,6 +39,9 @@ def require_admin_or_redirect(request: Request) -> RedirectResponse | None:
 
 
 def issue_csrf_token(request: Request) -> str:
+    existing_token = request.session.get(CSRF_TOKEN_KEY)
+    if isinstance(existing_token, str) and existing_token:
+        return existing_token
     token = secrets.token_urlsafe(32)
     request.session[CSRF_TOKEN_KEY] = token
     return token

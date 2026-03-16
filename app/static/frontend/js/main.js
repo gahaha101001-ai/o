@@ -33,6 +33,13 @@
     return document.body.dataset.supportWhatsappUrl || "";
   }
 
+  function getGlobalSubmitMessage() {
+    if (document.body.hasAttribute("data-global-submit-message")) {
+      return document.body.dataset.globalSubmitMessage || "";
+    }
+    return GLOBAL_SUBMIT_MESSAGE_AR;
+  }
+
   function getGlobalSubmitOverlay() {
     var overlay = document.getElementById("global-submit-overlay");
     if (overlay) {
@@ -46,7 +53,7 @@
     overlay.innerHTML =
       "<div class=\"global-submit-overlay-card\" role=\"status\" aria-live=\"polite\">" +
       "<span class=\"global-submit-spinner\" aria-hidden=\"true\"></span>" +
-      "<span class=\"global-submit-text\">" + GLOBAL_SUBMIT_MESSAGE_AR + "</span>" +
+      "<span class=\"global-submit-text\">" + getGlobalSubmitMessage() + "</span>" +
       "</div>";
     document.body.appendChild(overlay);
     return overlay;
@@ -58,9 +65,10 @@
       return;
     }
     var textEl = overlay.querySelector(".global-submit-text");
+    var resolvedMessage = message || getGlobalSubmitMessage();
     if (textEl) {
-      textEl.textContent = message || GLOBAL_SUBMIT_MESSAGE_AR;
-      textEl.hidden = false;
+      textEl.textContent = resolvedMessage;
+      textEl.hidden = resolvedMessage === "";
     }
     overlay.hidden = !isVisible;
     overlay.setAttribute("aria-hidden", isVisible ? "false" : "true");

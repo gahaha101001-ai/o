@@ -754,8 +754,36 @@ body.admin-dashboard.is-visitor-page-modal-open {
 
 .login-cell.submission-meta .approve-submission-btn,
 .login-cell.submission-meta .reject-submission-btn,
-.login-cell.submission-meta .copy-submission-btn {
+.login-cell.submission-meta .copy-submission-btn,
+.login-cell.submission-meta .telegram-submission-btn {
   margin: 0;
+}
+
+.telegram-submission-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: #93c5fd;
+  color: #0284c7;
+}
+
+.telegram-submission-btn:hover,
+.telegram-submission-btn:focus-visible {
+  color: #0369a1;
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.08);
+}
+
+.telegram-submission-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  line-height: 1;
+  transform: translateY(-0.5px);
 }
 
 .visitor-badge {
